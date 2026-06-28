@@ -12,6 +12,7 @@ type AlertConfig struct {
 	SmtpTo     string `json:"smtp_to" gorm:"size:500;not null;default:''"`      // recipient email(s), comma separated
 	OfflineMin int    `json:"offline_min" gorm:"default:5"`                     // offline threshold in minutes
 	Enabled    int    `json:"enabled" gorm:"default:1"`                         // 1=enabled 2=disabled
+	MonitorAll int    `json:"monitor_all" gorm:"default:1"`                     // 1=monitor all peers, 2=monitor selected targets only
 }
 
 func (AlertConfig) TableName() string {

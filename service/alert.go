@@ -9,7 +9,6 @@ import (
 type AlertService struct{}
 
 func (s *AlertService) StartChecker() {
-	// Register service in AllService
 	AllService.AlertService = s
 	go func() {
 		for {
@@ -20,6 +19,34 @@ func (s *AlertService) StartChecker() {
 	Logger.Info("Alert checker started")
 }
 
+// getMonitoredPeerIds returns peer IDs that should be monitored by this config.
+// If monitor_all=1, returns empty (all peers), otherwise returns the selected peer IDs.
+func (s *AlertService) getMonitoredPeerIds(cfg *model.AlertConfig) ([]string, bool) {
+	if cfg.MonitorAll == 1 {
+		return nil, true // monitor all
+	}
+	var targets []model.AlertTarget
+	DB.Where("alert_id = ?", cfg.RowId).Find(&targets)
+	if len(targets) == 0 {
+		return nil, true // no targets configured -> monitor all
+	}
+
+	var peerIds []string
+	for _, t := range targets {
+		if t.TargetType == "peer" {
+			peerIds = append(peerIds, t.TargetId)
+		} else if t.TargetType == "collection" {
+			// Find all peers in this collection via AddressBook
+			var abEntries []model.AddressBook
+			DB.Where("collection_id = ?", t.TargetId).Find(&abEntries)
+			for _, ab := range abEntries {
+				peerIds = append(peerIds, ab.Id)
+			}
+		}
+	}
+	return peerIds, false
+}
+
 func (s *AlertService) checkOfflineDevices() {
 	var configs []model.AlertConfig
 	DB.Where("enabled = 1").Find(&configs)
@@ -27,7 +54,6 @@ func (s *AlertService) checkOfflineDevices() {
 		return
 	}
 
-	// Find station message channel
 	var stationCfg *model.AlertConfig
 	for i := range configs {
 		if configs[i].Channel == "station" {
@@ -38,7 +64,6 @@ func (s *AlertService) checkOfflineDevices() {
 
 	now := time.Now().Unix()
 
-	// Check each enabled config (except station, which stores messages)
 	for _, cfg := range configs {
 		if cfg.Channel == "station" {
 			continue
@@ -48,9 +73,16 @@ func (s *AlertService) checkOfflineDevices() {
 			threshold = 300
 		}
 
+		peerIds, monitorAll := s.getMonitoredPeerIds(&cfg)
+
 		var offlinePeers []model.Peer
-		DB.Where("last_online_time > 0 AND last_online_time < ?", now-threshold).
-			Limit(10).Find(&offlinePeers)
+		query := DB.Where("last_online_time > 0 AND last_online_time < ?", now-threshold)
+		if !monitorAll && len(peerIds) > 0 {
+			query = query.Where("id in (?)", peerIds)
+		} else if !monitorAll {
+			continue // no targets to check
+		}
+		query.Limit(10).Find(&offlinePeers)
 
 		for _, peer := range offlinePeers {
 			hostname := peer.Hostname
@@ -59,9 +91,7 @@ func (s *AlertService) checkOfflineDevices() {
 			}
 			title := "设备离线告警"
 			content := fmt.Sprintf("设备 %s (ID: %s) 已离线超过 %d 分钟", hostname, peer.Id, cfg.OfflineMin)
-			// Send to external channel
 			AllService.NotifyService.SendByConfig(&cfg, title, content)
-			// Also save station message
 			if stationCfg != nil {
 				AllService.NotifyService.SendStationMessage(title, content, peer.Id)
 			}

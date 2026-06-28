@@ -71,6 +71,14 @@ func AlertConfigBind(adg *gin.RouterGroup) {
 	rg.POST("/create", cont.Create)
 	rg.POST("/update", cont.Update)
 	rg.POST("/delete", cont.Delete)
+	// alert targets
+	target := &admin.AlertTargetCtl{}
+	rg.GET("/targets", target.List)
+	rg.POST("/targets/create", target.Create)
+	rg.POST("/targets/delete", target.Delete)
+	// available collections/peers for selection
+	rg.GET("/available_collections", target.AvailableCollections)
+	rg.GET("/available_peers", target.AvailablePeers)
 }
 
 func StationMessageBind(adg *gin.RouterGroup) {
