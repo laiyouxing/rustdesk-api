@@ -49,10 +49,17 @@ func Init(g *gin.Engine) {
 	VersionBind(adg)
 	MyBind(adg)
 
+	DashboardBind(adg)
 	RustdeskCmdBind(adg)
 	DeviceGroupBind(adg)
 	//访问静态文件
 	//g.StaticFS("/upload", http.Dir(global.Config.Gin.ResourcesPath+"/upload"))
+}
+
+func DashboardBind(adg *gin.RouterGroup) {
+	cont := &admin.Dashboard{}
+	rg := adg.Group("/dashboard")
+	rg.GET("/stats", cont.Stats)
 }
 
 func RustdeskCmdBind(adg *gin.RouterGroup) {

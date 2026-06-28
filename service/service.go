@@ -25,6 +25,7 @@ type Service struct {
 	*LdapService
 	*AppService
 	*AppReleaseService
+	*DashboardService
 }
 
 type Dependencies struct {
