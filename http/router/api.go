@@ -27,7 +27,6 @@ func ApiInit(g *gin.Engine) {
 		i := &api.Index{}
 		frg.GET("/", i.Index)
 		frg.GET("/version", i.Version)
-		frg.GET("/version/admin", i.VersionAdmin)
 
 		frg.POST("/heartbeat", i.Heartbeat)
 	}

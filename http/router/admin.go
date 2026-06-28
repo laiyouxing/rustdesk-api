@@ -328,6 +328,7 @@ func VersionBind(rg *gin.RouterGroup) {
 	vR := rg.Group("/version").Use(middleware.AdminPrivilege())
 	{
 		cont := &admin.Version{}
+		vR.GET("/admin", cont.VersionAdmin)
 		vR.GET("/list", cont.List)
 		vR.POST("/create", cont.Create)
 		vR.POST("/update", cont.Update)

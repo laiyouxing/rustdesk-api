@@ -5,9 +5,15 @@ import (
 	"github.com/lejianwen/rustdesk-api/v2/http/response"
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"github.com/lejianwen/rustdesk-api/v2/service"
+	"net/http"
 )
 
 type Version struct {
+}
+
+// VersionAdmin 版本管理页面
+func (v *Version) VersionAdmin(c *gin.Context) {
+	c.HTML(http.StatusOK, "version_admin.html", gin.H{})
 }
 
 func (v *Version) List(c *gin.Context) {
