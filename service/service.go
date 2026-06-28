@@ -26,6 +26,8 @@ type Service struct {
 	*AppService
 	*AppReleaseService
 	*DashboardService
+	*AlertService
+	*NotifyService
 }
 
 type Dependencies struct {

@@ -202,6 +202,7 @@ func InitGlobal() {
 
 	//service
 	service.New(&global.Config, global.DB, global.Logger, global.Jwt, global.Lock)
+	service.AllService.AlertService.StartChecker()
 
 	global.LoginLimiter = utils.NewLoginLimiter(utils.SecurityPolicy{
 		CaptchaThreshold: global.Config.App.CaptchaThreshold,

@@ -50,6 +50,8 @@ func Init(g *gin.Engine) {
 	MyBind(adg)
 
 	DashboardBind(adg)
+	AlertConfigBind(adg)
+	StationMessageBind(adg)
 	RustdeskCmdBind(adg)
 	DeviceGroupBind(adg)
 	//访问静态文件
@@ -60,6 +62,23 @@ func DashboardBind(adg *gin.RouterGroup) {
 	cont := &admin.Dashboard{}
 	rg := adg.Group("/dashboard")
 	rg.GET("/stats", cont.Stats)
+}
+
+func AlertConfigBind(adg *gin.RouterGroup) {
+	cont := &admin.AlertConfig{}
+	rg := adg.Group("/alert_config")
+	rg.GET("/list", cont.List)
+	rg.POST("/create", cont.Create)
+	rg.POST("/update", cont.Update)
+	rg.POST("/delete", cont.Delete)
+}
+
+func StationMessageBind(adg *gin.RouterGroup) {
+	cont := &admin.StationMessage{}
+	rg := adg.Group("/station_message")
+	rg.GET("/list", cont.List)
+	rg.GET("/unread_count", cont.UnreadCount)
+	rg.POST("/mark_read", cont.MarkRead)
 }
 
 func RustdeskCmdBind(adg *gin.RouterGroup) {
