@@ -95,7 +95,10 @@ jobs:
           if [ -z "$TAG_VERSION" ] && [ -n "$VERSION_TAG" ]; then
             TAG_VERSION="$VERSION_TAG"
           fi
-          VERSION="${TAG_VERSION#v}" 
+          VERSION="${TAG_VERSION#v}"
+          if [ -z "$VERSION" ]; then
+            VERSION="latest"
+          fi
           echo "TAG_VERSION=$TAG_VERSION" >> $GITHUB_ENV
           echo "VERSION=$VERSION" >> $GITHUB_ENV
           echo "TAG_REF=refs/tags/$TAG_VERSION" >> $GITHUB_ENV
@@ -197,7 +200,10 @@ jobs:
           if [ -z "$TAG_VERSION" ] && [ -n "$VERSION_TAG" ]; then
             TAG_VERSION="$VERSION_TAG"
           fi
-          VERSION="${TAG_VERSION#v}" 
+          VERSION="${TAG_VERSION#v}"
+          if [ -z "$VERSION" ]; then
+            VERSION="latest"
+          fi
           echo "TAG_VERSION=$TAG_VERSION" >> $GITHUB_ENV
           echo "VERSION=$VERSION" >> $GITHUB_ENV
 
