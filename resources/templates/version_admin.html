@@ -103,7 +103,7 @@ function toast(msg, type) {
 
 async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json' };
-  if (token) headers['Authorization'] = 'Bearer ' + token;
+  if (token) headers['api-token'] = token;
   if (opts.noJson) delete headers['Content-Type'];
   const res = await fetch(path, { ...opts, headers });
   if (res.status === 401) { token = ''; document.getElementById('loginOverlay').classList.remove('hidden'); return null; }
