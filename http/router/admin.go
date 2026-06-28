@@ -46,6 +46,7 @@ func Init(g *gin.Engine) {
 	//deprecated end
 
 	ShareRecordBind(adg)
+	VersionBind(adg)
 	MyBind(adg)
 
 	RustdeskCmdBind(adg)
@@ -321,4 +322,16 @@ func ShareRecordBind(rg *gin.RouterGroup) {
 		aR.POST("/batchDelete", cont.BatchDelete)
 	}
 
+}
+
+func VersionBind(rg *gin.RouterGroup) {
+	vR := rg.Group("/version").Use(middleware.AdminPrivilege())
+	{
+		cont := &admin.Version{}
+		vR.GET("/list", cont.List)
+		vR.POST("/create", cont.Create)
+		vR.POST("/update", cont.Update)
+		vR.POST("/delete", cont.Delete)
+		vR.POST("/setEnable", cont.SetEnable)
+	}
 }

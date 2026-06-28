@@ -61,6 +61,11 @@ func ApiInit(g *gin.Engine) {
 		frg.POST("/sysinfo_ver", pe.SysInfoVer)
 	}
 
+	{
+		v := &api.Version{}
+		frg.GET("/version/latest", v.LatestVersion)
+	}
+
 	if global.Config.App.WebClient == 1 {
 		WebClientRoutes(frg)
 	}
