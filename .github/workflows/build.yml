@@ -27,6 +27,10 @@ on:
         description: 'Web Client API Repository'
         required: true
         default: 'https://github.com/laiyouxing/rustdesk-api-web'
+      VERSION_TAG:
+        description: 'Release tag name (e.g. v1.2.3). Leave empty to skip release.'
+        required: false
+        default: ''
   push:
     tags:
       - 'v*.*.*'  # 当推送带有版本号的 tag（例如 v1.0.0）时触发工作流
@@ -40,6 +44,7 @@ env:
   GHCR_IMAGE_NAMESPACE: ${{ github.event.inputs.GHCR_IMAGE_NAMESPACE || github.actor }}
   SKIP_DOCKER_HUB: ${{ github.event.inputs.SKIP_DOCKER_HUB || 'false' }}
   SKIP_GHCR: ${{ github.event.inputs.SKIP_GHCR || 'false' }}
+  VERSION_TAG: ${{ github.event.inputs.VERSION_TAG || '' }}
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -87,8 +92,13 @@ jobs:
       - name: Get tag version
         run: |
           TAG_VERSION="${GITHUB_REF##*/}"
+          if [ -z "$TAG_VERSION" ] && [ -n "$VERSION_TAG" ]; then
+            TAG_VERSION="$VERSION_TAG"
+          fi
           VERSION="${TAG_VERSION#v}" 
+          echo "TAG_VERSION=$TAG_VERSION" >> $GITHUB_ENV
           echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "TAG_REF=refs/tags/$TAG_VERSION" >> $GITHUB_ENV
 
       - name: Write version to resources/version
         run:  echo $VERSION > resources/version
@@ -139,9 +149,11 @@ jobs:
             ${{ matrix.job.goos}}-${{ matrix.job.platform }}.${{matrix.job.file_ext}}
 
       - name: Upload to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || env.VERSION_TAG != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.TAG_VERSION }}
+          name: ${{ env.TAG_VERSION }}
           files: |
             ${{ matrix.job.goos}}-${{ matrix.job.platform }}.${{matrix.job.file_ext}}
         env:
@@ -182,6 +194,9 @@ jobs:
         id: get_tag
         run: |
           TAG_VERSION="${GITHUB_REF##*/}"
+          if [ -z "$TAG_VERSION" ] && [ -n "$VERSION_TAG" ]; then
+            TAG_VERSION="$VERSION_TAG"
+          fi
           VERSION="${TAG_VERSION#v}" 
           echo "TAG_VERSION=$TAG_VERSION" >> $GITHUB_ENV
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -221,9 +236,11 @@ jobs:
             debian-build/*.deb
 
       - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || env.VERSION_TAG != ''
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.TAG_VERSION }}
+          name: ${{ env.TAG_VERSION }}
           files: |
             debian-build/rustdesk-api-server_*_${{ matrix.job.debian_platform }}.deb
 
@@ -268,6 +285,8 @@ jobs:
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          elif [ -n "$VERSION_TAG" ]; then
+            echo "TAG=$VERSION_TAG" >> $GITHUB_ENV
           else
             echo "TAG=latest" >> $GITHUB_ENV  # Default to 'latest' if not a tag
           fi
@@ -362,6 +381,8 @@ jobs:
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          elif [ -n "$VERSION_TAG" ]; then
+            echo "TAG=$VERSION_TAG" >> $GITHUB_ENV
           else
             echo "TAG=latest" >> $GITHUB_ENV  # Default to 'latest' if not a tag
           fi
