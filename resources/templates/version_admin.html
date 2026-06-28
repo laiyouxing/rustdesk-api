@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>版本管理 - RustDesk API</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #333; }
+.header { background: #2c8cff; color: #fff; padding: 16px 24px; }
+.header h1 { font-size: 20px; }
+.container { max-width: 960px; margin: 0 auto; padding: 20px; }
+.card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,.1); margin-bottom: 20px; }
+.card-title { padding: 12px 16px; border-bottom: 1px solid #eee; font-size: 16px; font-weight: 600; }
+.card-body { padding: 16px; }
+.form-row { display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap; }
+.form-group { flex: 1; min-width: 180px; }
+.form-group label { display: block; font-size: 13px; color: #666; margin-bottom: 4px; }
+.form-group input, .form-group textarea, .form-group select { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 4px; font-size: 14px; }
+.form-group textarea { min-height: 60px; resize: vertical; }
+.btn { padding: 8px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
+.btn-primary { background: #2c8cff; color: #fff; }
+.btn-primary:hover { background: #1a7ae6; }
+.btn-danger { background: #ff4d4f; color: #fff; }
+.btn-danger:hover { background: #e04345; }
+.btn-sm { padding: 4px 12px; font-size: 12px; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; font-size: 14px; }
+th { background: #fafafa; font-weight: 600; color: #666; }
+tr:hover td { background: #f8f9ff; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; }
+.badge-on { background: #e6f7e6; color: #52c41a; }
+.badge-off { background: #fff0f0; color: #ff4d4f; }
+.status { display: flex; gap: 4px; }
+.toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 6px; color: #fff; font-size: 14px; z-index: 999; display: none; }
+.toast-success { background: #52c41a; }
+.toast-error { background: #ff4d4f; }
+.login-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; z-index: 100; }
+.login-box { background: #fff; border-radius: 12px; padding: 32px; width: 360px; }
+.login-box h2 { margin-bottom: 20px; font-size: 18px; text-align: center; }
+.login-box .form-group { margin-bottom: 16px; min-width: 100%; }
+.login-box .btn { width: 100%; padding: 10px; font-size: 15px; }
+.hidden { display: none; }
+.action-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.empty { text-align: center; color: #999; padding: 40px; }
+</style>
+</head>
+<body>
+<div class="header"><h1>📦 版本发布管理</h1></div>
+<div id="toast" class="toast"></div>
+
+<div id="loginOverlay" class="login-overlay">
+  <div class="login-box">
+    <h2>管理员登录</h2>
+    <div class="form-group"><label>用户名</label><input id="loginUser" placeholder="admin"></div>
+    <div class="form-group"><label>密码</label><input id="loginPass" type="password" placeholder="********"></div>
+    <button class="btn btn-primary" onclick="login()">登 录</button>
+  </div>
+</div>
+
+<div id="mainContent" class="container hidden">
+  <div class="card">
+    <div class="card-title">添加新版本</div>
+    <div class="card-body">
+      <div class="form-row">
+        <div class="form-group"><label>版本号</label><input id="fVersion" placeholder="1.4.8.2"></div>
+        <div class="form-group"><label>平台</label>
+          <select id="fPlatform"><option value="windows">Windows</option><option value="macos">macOS</option><option value="ubuntu">Ubuntu</option></select>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>下载地址</label><input id="fUrl" placeholder="https://github.com/.../rustdesk-1.4.8.2-x86_64.exe"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label>发布说明</label><textarea id="fNote" placeholder="修复了哪些问题..."></textarea></div>
+      </div>
+      <button class="btn btn-primary" onclick="createVersion()">发布版本</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">已发布版本</div>
+    <div class="card-body">
+      <table id="versionTable">
+        <thead><tr><th>ID</th><th>版本号</th><th>平台</th><th>下载地址</th><th>状态</th><th>发布时间</th><th>操作</th></tr></thead>
+        <tbody id="versionBody"></tbody>
+      </table>
+      <div id="emptyTip" class="empty hidden">暂无版本记录</div>
+    </div>
+  </div>
+</div>
+
+<script>
+let token = '';
+
+function toast(msg, type) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast toast-' + type;
+  el.style.display = 'block';
+  setTimeout(() => el.style.display = 'none', 3000);
+}
+
+async function api(path, opts = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+  if (opts.noJson) delete headers['Content-Type'];
+  const res = await fetch(path, { ...opts, headers });
+  if (res.status === 401) { token = ''; document.getElementById('loginOverlay').classList.remove('hidden'); return null; }
+  const data = await res.json();
+  if (data.code !== 0 && data.errno !== 0) { toast(data.message || '请求失败', 'error'); return null; }
+  return data;
+}
+
+async function login() {
+  const username = document.getElementById('loginUser').value;
+  const password = document.getElementById('loginPass').value;
+  const data = await api('/api/admin/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+  if (data && data.data && data.data.token) {
+    token = data.data.token;
+    document.getElementById('loginOverlay').classList.add('hidden');
+    document.getElementById('mainContent').classList.remove('hidden');
+    toast('登录成功', 'success');
+    loadVersions();
+  }
+}
+
+async function loadVersions() {
+  const data = await api('/api/admin/version/list');
+  if (!data || !data.data) return;
+  const list = data.data.list || [];
+  const tbody = document.getElementById('versionBody');
+  const empty = document.getElementById('emptyTip');
+  tbody.innerHTML = '';
+  if (list.length === 0) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  list.forEach(v => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${v.id}</td>
+      <td><strong>${v.version}</strong></td>
+      <td>${v.platform}</td>
+      <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${v.url}">${v.url}</td>
+      <td><span class="badge ${v.status === 1 ? 'badge-on' : 'badge-off'}">${v.status === 1 ? '启用' : '禁用'}</span></td>
+      <td>${v.created_at || ''}</td>
+      <td>
+        <button class="btn btn-sm ${v.status === 1 ? 'btn-danger' : 'btn-primary'}" onclick="toggleVersion(${v.id}, ${v.status})">${v.status === 1 ? '禁用' : '启用'}</button>
+        <button class="btn btn-sm btn-danger" onclick="deleteVersion(${v.id})">删除</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+async function createVersion() {
+  const version = document.getElementById('fVersion').value.trim();
+  const platform = document.getElementById('fPlatform').value;
+  const url = document.getElementById('fUrl').value.trim();
+  const note = document.getElementById('fNote').value.trim();
+  if (!version || !url) { toast('版本号和下载地址不能为空', 'error'); return; }
+  const data = await api('/api/admin/version/create', { method: 'POST', body: JSON.stringify({ version, platform, url, note }) });
+  if (data) { toast('发布成功', 'success'); document.getElementById('fVersion').value = ''; document.getElementById('fUrl').value = ''; document.getElementById('fNote').value = ''; loadVersions(); }
+}
+
+async function toggleVersion(id, currentStatus) {
+  const newStatus = currentStatus === 1 ? 2 : 1;
+  const data = await api('/api/admin/version/setEnable', { method: 'POST', body: JSON.stringify({ id, status: newStatus }) });
+  if (data) { toast('操作成功', 'success'); loadVersions(); }
+}
+
+async function deleteVersion(id) {
+  if (!confirm('确定删除此版本？')) return;
+  const data = await api('/api/admin/version/delete', { method: 'POST', body: JSON.stringify({ id }) });
+  if (data) { toast('删除成功', 'success'); loadVersions(); }
+}
+
+// Check if already logged in on load
+async function checkLogin() {
+  const data = await api('/api/admin/user/current');
+  if (data && data.data) {
+    token = localStorage.getItem('token') || '';
+    if (token) {
+      document.getElementById('loginOverlay').classList.add('hidden');
+      document.getElementById('mainContent').classList.remove('hidden');
+      loadVersions();
+      return;
+    }
+  }
+  // try auto login with stored token
+  token = localStorage.getItem('token') || '';
+  if (token) {
+    const d = await api('/api/admin/user/current');
+    if (d && d.data) {
+      document.getElementById('loginOverlay').classList.add('hidden');
+      document.getElementById('mainContent').classList.remove('hidden');
+      loadVersions();
+    } else {
+      token = '';
+      localStorage.removeItem('token');
+    }
+  }
+}
+
+// patch login to save token
+const origLogin = login;
+login = async function() {
+  const username = document.getElementById('loginUser').value;
+  const password = document.getElementById('loginPass').value;
+  const data = await api('/api/admin/login', { method: 'POST', body: JSON.stringify({ username, password }) });
+  if (data && data.data && data.data.token) {
+    token = data.data.token;
+    localStorage.setItem('token', token);
+    document.getElementById('loginOverlay').classList.add('hidden');
+    document.getElementById('mainContent').classList.remove('hidden');
+    toast('登录成功', 'success');
+    loadVersions();
+  }
+};
+
+checkLogin();
+</script>
+</body>
+</html>
