@@ -25,7 +25,7 @@ func (v *Version) List(c *gin.Context) {
 			pageSize = ps
 		}
 	}
-	list, total := service.AllService.VersionService.List(uint(page), uint(pageSize))
+	list, total := service.AllService.AppReleaseService.List(uint(page), uint(pageSize))
 	response.Success(c, gin.H{
 		"list":  list,
 		"total": total,
@@ -33,31 +33,31 @@ func (v *Version) List(c *gin.Context) {
 }
 
 func (v *Version) Create(c *gin.Context) {
-	ver := &model.Version{}
+	ver := &model.AppRelease{}
 	if err := c.ShouldBindJSON(ver); err != nil {
-		response.Fail(c, "参数错误")
+		response.Fail(c, 101, "参数错误")
 		return
 	}
 	if ver.Version == "" {
-		response.Fail(c, "版本号不能为空")
+		response.Fail(c, 101, "版本号不能为空")
 		return
 	}
-	ver.Status = model.COMMON_STATUS_ENABLE
-	service.AllService.VersionService.Create(ver)
+	ver.Status = int(model.COMMON_STATUS_ENABLE)
+	service.AllService.AppReleaseService.Create(ver)
 	response.Success(c, nil)
 }
 
 func (v *Version) Update(c *gin.Context) {
-	ver := &model.Version{}
+	ver := &model.AppRelease{}
 	if err := c.ShouldBindJSON(ver); err != nil {
-		response.Fail(c, "参数错误")
+		response.Fail(c, 101, "参数错误")
 		return
 	}
 	if ver.Id == 0 {
-		response.Fail(c, "ID不能为空")
+		response.Fail(c, 101, "ID不能为空")
 		return
 	}
-	service.AllService.VersionService.Update(ver)
+	service.AllService.AppReleaseService.Update(ver)
 	response.Success(c, nil)
 }
 
@@ -66,10 +66,10 @@ func (v *Version) Delete(c *gin.Context) {
 		Id uint `json:"id"`
 	}{}
 	if err := c.ShouldBindJSON(form); err != nil || form.Id == 0 {
-		response.Fail(c, "ID不能为空")
+		response.Fail(c, 101, "ID不能为空")
 		return
 	}
-	service.AllService.VersionService.Delete(form.Id)
+	service.AllService.AppReleaseService.Delete(form.Id)
 	response.Success(c, nil)
 }
 
@@ -79,16 +79,16 @@ func (v *Version) SetEnable(c *gin.Context) {
 		Status int  `json:"status"`
 	}{Status: 1}
 	if err := c.ShouldBindJSON(form); err != nil || form.Id == 0 {
-		response.Fail(c, "ID不能为空")
+		response.Fail(c, 101, "ID不能为空")
 		return
 	}
-	ver := service.AllService.VersionService.FindById(form.Id)
+	ver := service.AllService.AppReleaseService.FindById(form.Id)
 	if ver == nil || ver.Id == 0 {
-		response.Fail(c, "版本不存在")
+		response.Fail(c, 101, "版本不存在")
 		return
 	}
 	ver.Status = form.Status
-	service.AllService.VersionService.Update(ver)
+	service.AllService.AppReleaseService.Update(ver)
 	response.Success(c, nil)
 }
 

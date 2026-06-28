@@ -21,7 +21,7 @@ type Version struct {
 // @Router /api/version/latest [get]
 func (v *Version) LatestVersion(c *gin.Context) {
 	platform := c.DefaultQuery("platform", "")
-	ver := service.AllService.VersionService.Latest(platform)
+	ver := service.AllService.AppReleaseService.Latest(platform)
 	if ver == nil || ver.Id == 0 {
 		response.Success(c, gin.H{
 			"version":  "",

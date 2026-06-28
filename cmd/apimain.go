@@ -290,6 +290,7 @@ func Migrate(version uint) {
 	global.Logger.Info("Migrating....", version)
 	err := global.DB.AutoMigrate(
 		&model.Version{},
+		&model.AppRelease{},
 		&model.User{},
 		&model.UserToken{},
 		&model.Tag{},
