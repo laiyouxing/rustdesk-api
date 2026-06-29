@@ -20,15 +20,62 @@ func (s *AlertService) StartChecker() {
 }
 
 // getMonitoredPeerIds returns peer IDs that should be monitored by this config.
-// If monitor_all=1, returns empty (all peers), otherwise returns the selected peer IDs.
+// If monitor_all=1, returns the user's own address book peer IDs (personal scope).
+// If monitor_all=2, returns the selected peer IDs from alert_targets.
 func (s *AlertService) getMonitoredPeerIds(cfg *model.AlertConfig) ([]string, bool) {
 	if cfg.MonitorAll == 1 {
-		return nil, true // monitor all
+		// Personal scope: only the user's own devices
+		// Get peer IDs from user's address book (including own + shared)
+		var abEntries []model.AddressBook
+
+		// Own collections
+		var ownColls []model.AddressBookCollection
+		DB.Where("user_id = ?", cfg.UserId).Find(&ownColls)
+		ownCollIds := []uint{0} // collection_id=0 is personal default
+		for _, col := range ownColls {
+			ownCollIds = append(ownCollIds, col.Id)
+		}
+
+		// Shared collections (personally or via group)
+		user := &model.User{}
+		DB.First(user, cfg.UserId)
+		if user.Id > 0 {
+			var rules []model.AddressBookCollectionRule
+			ruleQuery := DB.Where("type = ? AND to_id = ?",
+				model.ShareAddressBookRuleTypePersonal, user.Id)
+			if user.GroupId > 0 {
+				ruleQuery = DB.Where(
+					"(type = ? AND to_id = ?) OR (type = ? AND to_id = ?)",
+					model.ShareAddressBookRuleTypePersonal, user.Id,
+					model.ShareAddressBookRuleTypeGroup, user.GroupId,
+				)
+			}
+			ruleQuery.Find(&rules)
+			for _, rule := range rules {
+				ownCollIds = append(ownCollIds, rule.CollectionId)
+			}
+		}
+
+		// Get all address book entries for these collections
+		DB.Where("collection_id in (?)", ownCollIds).Find(&abEntries)
+		if len(abEntries) == 0 {
+			return nil, true // fallback to all peers if no address book
+		}
+		var peerIds []string
+		for _, ab := range abEntries {
+			peerIds = append(peerIds, ab.Id)
+		}
+		return peerIds, false
 	}
+
 	var targets []model.AlertTarget
 	DB.Where("alert_id = ?", cfg.RowId).Find(&targets)
 	if len(targets) == 0 {
-		return nil, true // no targets configured -> monitor all
+		// No targets configured -> use personal scope too
+		return s.getMonitoredPeerIds(&model.AlertConfig{
+			MonitorAll: 1,
+			UserId:     cfg.UserId,
+		})
 	}
 
 	var peerIds []string
@@ -36,7 +83,6 @@ func (s *AlertService) getMonitoredPeerIds(cfg *model.AlertConfig) ([]string, bo
 		if t.TargetType == "peer" {
 			peerIds = append(peerIds, t.TargetId)
 		} else if t.TargetType == "collection" {
-			// Find all peers in this collection via AddressBook
 			var abEntries []model.AddressBook
 			DB.Where("collection_id = ?", t.TargetId).Find(&abEntries)
 			for _, ab := range abEntries {
@@ -49,7 +95,7 @@ func (s *AlertService) getMonitoredPeerIds(cfg *model.AlertConfig) ([]string, bo
 
 func (s *AlertService) checkOfflineDevices() {
 	var configs []model.AlertConfig
-	DB.Where("enabled = 1").Find(&configs)
+	DB.Where("enabled = 1 AND user_id > 0").Find(&configs)
 	if len(configs) == 0 {
 		return
 	}

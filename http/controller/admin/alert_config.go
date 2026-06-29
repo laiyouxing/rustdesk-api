@@ -12,6 +12,13 @@ type AlertConfig struct {
 
 func (c *AlertConfig) List(ctx *gin.Context) {
 	var configs []model.AlertConfig
+	if user, ok := ctx.Get("curUser"); ok {
+		if u, ok := user.(*model.User); ok {
+			service.DB.Where("user_id = ?", u.Id).Find(&configs)
+			response.Success(ctx, gin.H{"list": configs})
+			return
+		}
+	}
 	service.DB.Find(&configs)
 	response.Success(ctx, gin.H{"list": configs})
 }
@@ -25,6 +32,12 @@ func (c *AlertConfig) Create(ctx *gin.Context) {
 	if f.Channel == "" {
 		response.Fail(ctx, 101, "请选择通道类型")
 		return
+	}
+	// Save the creator's user ID for scoping
+	if user, ok := ctx.Get("curUser"); ok {
+		if u, ok := user.(*model.User); ok {
+			f.UserId = u.Id
+		}
 	}
 	service.DB.Create(f)
 	response.Success(ctx, nil)
@@ -40,8 +53,15 @@ func (c *AlertConfig) Update(ctx *gin.Context) {
 		response.Fail(ctx, 101, "ID不能为空")
 		return
 	}
-	service.DB.Model(&model.AlertConfig{}).Where("row_id = ?", f.RowId).Updates(f)
-	response.Success(ctx, nil)
+	// Only allow updating own configs
+	if user, ok := ctx.Get("curUser"); ok {
+		if u, ok := user.(*model.User); ok {
+			service.DB.Model(&model.AlertConfig{}).Where("row_id = ? AND user_id = ?", f.RowId, u.Id).Updates(f)
+			response.Success(ctx, nil)
+			return
+		}
+	}
+	response.Fail(ctx, 101, "无权限")
 }
 
 func (c *AlertConfig) Delete(ctx *gin.Context) {
@@ -52,6 +72,12 @@ func (c *AlertConfig) Delete(ctx *gin.Context) {
 		response.Fail(ctx, 101, "ID不能为空")
 		return
 	}
-	service.DB.Delete(&model.AlertConfig{}, form.Id)
-	response.Success(ctx, nil)
+	if user, ok := ctx.Get("curUser"); ok {
+		if u, ok := user.(*model.User); ok {
+			service.DB.Where("row_id = ? AND user_id = ?", form.Id, u.Id).Delete(&model.AlertConfig{})
+			response.Success(ctx, nil)
+			return
+		}
+	}
+	response.Fail(ctx, 101, "无权限")
 }

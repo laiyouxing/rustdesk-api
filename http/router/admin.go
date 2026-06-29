@@ -87,6 +87,9 @@ func StationMessageBind(adg *gin.RouterGroup) {
 	rg.GET("/list", cont.List)
 	rg.GET("/unread_count", cont.UnreadCount)
 	rg.POST("/mark_read", cont.MarkRead)
+	rg.POST("/send", cont.Send)
+	rg.POST("/broadcast", cont.Broadcast)
+	rg.POST("/cleanup", cont.Cleanup)
 }
 
 func RustdeskCmdBind(adg *gin.RouterGroup) {
