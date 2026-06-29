@@ -311,6 +311,7 @@ func Migrate(version uint) {
 		&model.AlertConfig{},
 		&model.AlertTarget{},
 		&model.StationMessage{},
+		&model.StunServer{},
 	)
 	if err != nil {
 		global.Logger.Error("migrate err :=>", err)
