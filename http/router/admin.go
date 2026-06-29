@@ -52,7 +52,6 @@ func Init(g *gin.Engine) {
 	DashboardBind(adg)
 	AlertConfigBind(adg)
 	StationMessageBind(adg)
-	StunServerBind(adg)
 	RustdeskCmdBind(adg)
 	DeviceGroupBind(adg)
 	//访问静态文件
@@ -91,17 +90,6 @@ func StationMessageBind(adg *gin.RouterGroup) {
 	rg.POST("/send", cont.Send)
 	rg.POST("/broadcast", cont.Broadcast)
 	rg.POST("/cleanup", cont.Cleanup)
-}
-
-func StunServerBind(adg *gin.RouterGroup) {
-	cont := &admin.StunServer{}
-	rg := adg.Group("/stun_server")
-	rg.GET("/list", cont.List)
-	rg.GET("/get", cont.Get)
-	rg.POST("/create", cont.Create)
-	rg.POST("/update", cont.Update)
-	rg.POST("/delete", cont.Delete)
-	rg.POST("/test", cont.Test)
 }
 
 func RustdeskCmdBind(adg *gin.RouterGroup) {
