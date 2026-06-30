@@ -10,6 +10,12 @@ type Dashboard struct {
 }
 
 func (d *Dashboard) Stats(c *gin.Context) {
-	stats := service.AllService.DashboardService.Stats()
-	response.Success(c, stats)
+	u := service.AllService.UserService.CurUser(c)
+	if service.AllService.UserService.IsAdmin(u) {
+		stats := service.AllService.DashboardService.Stats()
+		response.Success(c, stats)
+	} else {
+		stats := service.AllService.DashboardService.UserStats(u.Id)
+		response.Success(c, stats)
+	}
 }

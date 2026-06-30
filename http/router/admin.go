@@ -60,7 +60,7 @@ func Init(g *gin.Engine) {
 
 func DashboardBind(adg *gin.RouterGroup) {
 	cont := &admin.Dashboard{}
-	rg := adg.Group("/dashboard").Use(middleware.AdminPrivilege())
+	rg := adg.Group("/dashboard")
 	rg.GET("/stats", cont.Stats)
 }
 
