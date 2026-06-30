@@ -87,8 +87,9 @@ func StationMessageBind(adg *gin.RouterGroup) {
 	rg.GET("/list", cont.List)
 	rg.GET("/unread_count", cont.UnreadCount)
 	rg.POST("/mark_read", cont.MarkRead)
-	// 发送消息和广播需要管理员权限
-	rg.POST("/send", middleware.AdminPrivilege(), cont.Send)
+	// 发送消息：所有登录用户均可发送
+	rg.POST("/send", cont.Send)
+	// 广播和清理需要管理员权限
 	rg.POST("/broadcast", middleware.AdminPrivilege(), cont.Broadcast)
 	rg.POST("/cleanup", middleware.AdminPrivilege(), cont.Cleanup)
 }
