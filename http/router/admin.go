@@ -87,9 +87,10 @@ func StationMessageBind(adg *gin.RouterGroup) {
 	rg.GET("/list", cont.List)
 	rg.GET("/unread_count", cont.UnreadCount)
 	rg.POST("/mark_read", cont.MarkRead)
-	rg.POST("/send", cont.Send)
-	rg.POST("/broadcast", cont.Broadcast)
-	rg.POST("/cleanup", cont.Cleanup)
+	// 发送消息和广播需要管理员权限
+	rg.POST("/send", middleware.AdminPrivilege(), cont.Send)
+	rg.POST("/broadcast", middleware.AdminPrivilege(), cont.Broadcast)
+	rg.POST("/cleanup", middleware.AdminPrivilege(), cont.Cleanup)
 }
 
 func RustdeskCmdBind(adg *gin.RouterGroup) {
