@@ -60,7 +60,7 @@ func Init(g *gin.Engine) {
 
 func DashboardBind(adg *gin.RouterGroup) {
 	cont := &admin.Dashboard{}
-	rg := adg.Group("/dashboard")
+	rg := adg.Group("/dashboard").Use(middleware.AdminPrivilege())
 	rg.GET("/stats", cont.Stats)
 }
 
@@ -102,7 +102,7 @@ func RustdeskCmdBind(adg *gin.RouterGroup) {
 }
 func LoginBind(rg *gin.RouterGroup) {
 	cont := &admin.Login{}
-	rg.POST("/login", cont.Login)
+	rg.POST("/login", middleware.Limiter(), cont.Login)
 	rg.GET("/captcha", cont.Captcha)
 	rg.POST("/logout", cont.Logout)
 	rg.GET("/login-options", cont.LoginOptions)

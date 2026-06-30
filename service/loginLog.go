@@ -26,6 +26,24 @@ func (us *LoginLogService) List(page, pageSize uint, where func(tx *gorm.DB)) (r
 	tx.Count(&res.Total)
 	tx.Scopes(Paginate(page, pageSize))
 	tx.Find(&res.LoginLogs)
+
+	// 批量填充 Username（按 UserId 查 User 表）和 PeerId（= DeviceId）
+	userIds := make([]uint, 0, len(res.LoginLogs))
+	for _, log := range res.LoginLogs {
+		userIds = append(userIds, log.UserId)
+	}
+	if len(userIds) > 0 {
+		users := make([]*model.User, 0)
+		DB.Model(&model.User{}).Where("id in (?)", userIds).Find(&users)
+		userMap := make(map[uint]string, len(users))
+		for _, u := range users {
+			userMap[u.Id] = u.Username
+		}
+		for _, log := range res.LoginLogs {
+			log.Username = userMap[log.UserId]
+			log.PeerId = log.DeviceId
+		}
+	}
 	return
 }
 

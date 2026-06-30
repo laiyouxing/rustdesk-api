@@ -63,7 +63,7 @@ func Init(rowVal *Config, path string) *viper.Viper {
 	if path == "" {
 		path = DefaultConfig
 	}
-	v := viper.GetViper()
+	v := viper.New()
 	v.AutomaticEnv()
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_", "-", "_"))
 	v.SetEnvPrefix("RUSTDESK_API")

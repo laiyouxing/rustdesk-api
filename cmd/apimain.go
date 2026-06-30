@@ -123,19 +123,17 @@ func InitGlobal() {
 
 	global.InitI18n()
 
-	//redis
-	global.Redis = redis.NewClient(&redis.Options{
-		Addr:     global.Config.Redis.Addr,
-		Password: global.Config.Redis.Password,
-		DB:       global.Config.Redis.Db,
-	})
-
-	//cache
+	//cache（按需初始化 Redis，避免闲置占用资源）
 	if global.Config.Cache.Type == cache.TypeFile {
 		fc := cache.NewFileCache()
 		fc.SetDir(global.Config.Cache.FileDir)
 		global.Cache = fc
 	} else if global.Config.Cache.Type == cache.TypeRedis {
+		global.Redis = redis.NewClient(&redis.Options{
+			Addr:     global.Config.Cache.RedisAddr,
+			Password: global.Config.Cache.RedisPwd,
+			DB:       global.Config.Cache.RedisDb,
+		})
 		global.Cache = cache.NewRedis(&redis.Options{
 			Addr:     global.Config.Cache.RedisAddr,
 			Password: global.Config.Cache.RedisPwd,

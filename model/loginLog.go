@@ -12,6 +12,9 @@ type LoginLog struct {
 	UserTokenId uint   `json:"user_token_id" gorm:"default:0;not null;"`
 	IsDeleted   uint   `json:"is_deleted" gorm:"default:0;not null;"`
 	TimeModel
+	// 运行时填充字段（不写入 DB），用于前端展示
+	Username string `json:"username" gorm:"-"`
+	PeerId   string `json:"peer_id" gorm:"-"`
 }
 
 const (

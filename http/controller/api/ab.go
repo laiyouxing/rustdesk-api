@@ -48,9 +48,8 @@ func (a *Ab) Ab(c *gin.Context) {
 		Tags:      tagNames,
 		TagColors: string(tgc),
 	}
-	data, _ := json.Marshal(res)
 	c.JSON(http.StatusOK, gin.H{
-		"data": string(data),
+		"data": res,
 		//"licensed_devices": 999,
 	})
 }
@@ -699,7 +698,17 @@ func (a *Ab) PeerUpdate(c *gin.Context) {
 		response.Error(c, response.TranslateMsg(c, "ParamsError"))
 		return
 	}
-	fidstr := fid.(string)
+	// 安全类型转换：兼容 id 可能以数字类型发送（JSON 数字 → Go float64）
+	var fidstr string
+	switch v := fid.(type) {
+	case string:
+		fidstr = v
+	case float64:
+		fidstr = strconv.Itoa(int(v))
+	default:
+		response.Error(c, response.TranslateMsg(c, "ParamsError"))
+		return
+	}
 
 	ab := service.AllService.AddressBookService.InfoByUserIdAndIdAndCid(uid, fidstr, cid)
 	if ab == nil || ab.RowId == 0 {
