@@ -14,8 +14,8 @@ type StationMessage struct {
 }
 
 func (m *StationMessage) List(ctx *gin.Context) {
-	page := 1
-	pageSize := 20
+	page, _ := parseIntQuery(ctx, "page", 1)
+	pageSize, _ := parseIntQuery(ctx, "page_size", 20)
 	var total int64
 	var list []model.StationMessage
 	query := service.DB.Model(&model.StationMessage{})
@@ -25,7 +25,7 @@ func (m *StationMessage) List(ctx *gin.Context) {
 
 	// Non-admin users only see messages addressed to them or broadcasts
 	if !isAdmin {
-		query = query.Where("receiver_id = ? OR receiver_id = 0", user.Id)
+		query = query.Where("(receiver_id = ? OR receiver_id = 0)", user.Id)
 	}
 
 	// Admin users can filter by type
@@ -35,10 +35,26 @@ func (m *StationMessage) List(ctx *gin.Context) {
 	if ctx.Query("sender") != "" {
 		query = query.Where("sender_name like ?", "%"+ctx.Query("sender")+"%")
 	}
+	if ctx.Query("is_read") != "" {
+		query = query.Where("is_read = ?", ctx.Query("is_read"))
+	}
 
 	query.Count(&total)
 	query.Order("created_at desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list)
 	response.Success(ctx, gin.H{"list": list, "total": total})
+}
+
+func parseIntQuery(ctx *gin.Context, key string, defaultVal int) (int, error) {
+	val := ctx.Query(key)
+	if val == "" {
+		return defaultVal, nil
+	}
+	n := 0
+	_, err := fmt.Sscanf(val, "%d", &n)
+	if err != nil || n <= 0 {
+		return defaultVal, err
+	}
+	return n, nil
 }
 
 func (m *StationMessage) UnreadCount(ctx *gin.Context) {
