@@ -19,24 +19,22 @@ func (s *AlertService) StartChecker() {
 	Logger.Info("Alert checker started")
 }
 
-// getMonitoredPeerIds returns peer IDs that should be monitored by this config.
-// If monitor_all=1, returns the user's own address book peer IDs (personal scope).
-// If monitor_all=2, returns the selected peer IDs from alert_targets.
+// getMonitoredPeerIds 返回该告警配置应监控的设备ID列表
+// MonitorAll=1: 监控该用户地址簿中所有设备
+// MonitorAll=2: 仅监控 alert_targets 中选中的设备或集合
 func (s *AlertService) getMonitoredPeerIds(cfg *model.AlertConfig) ([]string, bool) {
 	if cfg.MonitorAll == 1 {
-		// Personal scope: only the user's own devices
-		// Get peer IDs from user's address book (including own + shared)
+		// 用户自己的地址簿
 		var abEntries []model.AddressBook
 
-		// Own collections
 		var ownColls []model.AddressBookCollection
 		DB.Where("user_id = ?", cfg.UserId).Find(&ownColls)
-		ownCollIds := []uint{0} // collection_id=0 is personal default
+		ownCollIds := []uint{0}
 		for _, col := range ownColls {
 			ownCollIds = append(ownCollIds, col.Id)
 		}
 
-		// Shared collections (personally or via group)
+		// 他人分享给该用户的集合
 		user := &model.User{}
 		DB.First(user, cfg.UserId)
 		if user.Id > 0 {
@@ -56,10 +54,9 @@ func (s *AlertService) getMonitoredPeerIds(cfg *model.AlertConfig) ([]string, bo
 			}
 		}
 
-		// Get all address book entries for these collections
 		DB.Where("collection_id in (?)", ownCollIds).Find(&abEntries)
 		if len(abEntries) == 0 {
-			return nil, true // fallback to all peers if no address book
+			return nil, true
 		}
 		var peerIds []string
 		for _, ab := range abEntries {
@@ -71,7 +68,6 @@ func (s *AlertService) getMonitoredPeerIds(cfg *model.AlertConfig) ([]string, bo
 	var targets []model.AlertTarget
 	DB.Where("alert_id = ?", cfg.RowId).Find(&targets)
 	if len(targets) == 0 {
-		// No targets configured -> use personal scope too
 		return s.getMonitoredPeerIds(&model.AlertConfig{
 			MonitorAll: 1,
 			UserId:     cfg.UserId,
@@ -100,15 +96,16 @@ func (s *AlertService) checkOfflineDevices() {
 		return
 	}
 
-	var stationCfg *model.AlertConfig
+	now := time.Now().Unix()
+
+	// 按用户分组处理：每个用户的告警配置各自独立
+	// key=userId, value=用户的station配置（若存在）
+	userStationCfg := make(map[uint]*model.AlertConfig)
 	for i := range configs {
 		if configs[i].Channel == "station" {
-			stationCfg = &configs[i]
-			break
+			userStationCfg[configs[i].UserId] = &configs[i]
 		}
 	}
-
-	now := time.Now().Unix()
 
 	for _, cfg := range configs {
 		if cfg.Channel == "station" {
@@ -126,7 +123,7 @@ func (s *AlertService) checkOfflineDevices() {
 		if !monitorAll && len(peerIds) > 0 {
 			query = query.Where("id in (?)", peerIds)
 		} else if !monitorAll {
-			continue // no targets to check
+			continue
 		}
 		query.Limit(10).Find(&offlinePeers)
 
@@ -137,10 +134,22 @@ func (s *AlertService) checkOfflineDevices() {
 			}
 			title := "设备离线告警"
 			content := fmt.Sprintf("设备 %s (ID: %s) 已离线超过 %d 分钟", hostname, peer.Id, cfg.OfflineMin)
-			AllService.NotifyService.SendByConfig(&cfg, title, content)
-			if stationCfg != nil {
-				AllService.NotifyService.SendStationMessage(title, content, peer.Id)
+
+			// 去重检查：上次通知时间距今是否超过一个检测周期(3min)
+			if cfg.LastNotifiedAt > now-180 {
+				continue
 			}
+
+			// 发送外部渠道通知
+			AllService.NotifyService.SendByConfig(&cfg, title, content)
+
+			// 该用户是否有站内消息配置？有则发站内消息（只发给该用户自己）
+			if stationCfg, ok := userStationCfg[cfg.UserId]; ok && stationCfg != nil {
+				AllService.NotifyService.SendStationMessage(cfg.UserId, title, content, peer.Id)
+			}
+
+			// 更新上次通知时间，避免重复触发
+			DB.Model(&model.AlertConfig{}).Where("row_id = ?", cfg.RowId).Update("last_notified_at", now)
 		}
 	}
 }

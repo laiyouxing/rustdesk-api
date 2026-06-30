@@ -69,10 +69,15 @@ func (m *StationMessage) UnreadCount(ctx *gin.Context) {
 func (m *StationMessage) MarkRead(ctx *gin.Context) {
 	user := ctx.MustGet("curUser").(*model.User)
 	form := &struct {
-		Id uint `json:"id"`
+		Id  uint `json:"id"`
+		All bool `json:"all"`
 	}{}
 	if err := ctx.ShouldBindJSON(form); err != nil {
-		// mark all as read for this user
+		response.Fail(ctx, 101, "参数错误")
+		return
+	}
+	if form.All {
+		// 全部标记已读（需前端显式传入 all=true）
 		service.DB.Model(&model.StationMessage{}).
 			Where("(receiver_id = ? OR receiver_id = 0) AND is_read = 0", user.Id).
 			Update("is_read", 1)
