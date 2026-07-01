@@ -4,6 +4,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/http/request/admin"
 	"github.com/lejianwen/rustdesk-api/v2/http/response"
+	"github.com/lejianwen/rustdesk-api/v2/model"
 	"github.com/lejianwen/rustdesk-api/v2/service"
 	"gorm.io/gorm"
 	"time"
@@ -35,8 +36,20 @@ func (ct *Peer) List(c *gin.Context) {
 		return
 	}
 	u := service.AllService.UserService.CurUser(c)
+
+	// Also include peers from user's accessible address books (personal + shared)
+	var abPeerIds []string
+	service.DB.Model(&model.AddressBook{}).Where("user_id = ?", u.Id).Pluck("id", &abPeerIds)
+	if len(abPeerIds) == 0 {
+		abPeerIds = nil // avoid empty IN clause
+	}
+
 	res := service.AllService.PeerService.List(query.Page, query.PageSize, func(tx *gorm.DB) {
-		tx.Where("user_id = ?", u.Id)
+		if len(abPeerIds) > 0 {
+			tx.Where("user_id = ? OR id in (?)", u.Id, abPeerIds)
+		} else {
+			tx.Where("user_id = ?", u.Id)
+		}
 		if query.TimeAgo > 0 {
 			lt := time.Now().Unix() - int64(query.TimeAgo)
 			tx.Where("last_online_time < ?", lt)
