@@ -123,8 +123,9 @@ func (m *StationMessage) Send(ctx *gin.Context) {
 		"sender_name": sender.Username,
 		"receiver_id": form.ReceiverId,
 	}).Error; err != nil {
+		errMsg := "消息发送失败: " + err.Error()
 		service.Logger.Warn("station_message send failed:", err)
-		response.Fail(ctx, 101, "消息发送失败")
+		response.Fail(ctx, 101, errMsg)
 		return
 	}
 	response.Success(ctx, nil)
@@ -157,8 +158,9 @@ func (m *StationMessage) Broadcast(ctx *gin.Context) {
 		"sender_name": sender.Username + "(管理员)",
 		"receiver_id": 0,
 	}).Error; err != nil {
+		errMsg := "广播发送失败: " + err.Error()
 		service.Logger.Warn("station_message broadcast failed:", err)
-		response.Fail(ctx, 101, "广播发送失败")
+		response.Fail(ctx, 101, errMsg)
 		return
 	}
 	response.Success(ctx, nil)
