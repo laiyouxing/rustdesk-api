@@ -40,13 +40,39 @@ func (ct *Peer) List(c *gin.Context) {
 	// Also include peers from user's accessible address books (personal + shared)
 	var abPeerIds []string
 	service.DB.Model(&model.AddressBook{}).Where("user_id = ?", u.Id).Pluck("id", &abPeerIds)
-	if len(abPeerIds) == 0 {
-		abPeerIds = nil // avoid empty IN clause
+
+	// Include peers from address book collections shared TO this user (personally or via group)
+	var sharedIds []string
+	if u.GroupId > 0 {
+		service.DB.Raw(`
+			SELECT ab.id FROM address_book ab
+			INNER JOIN address_book_collection_rules r ON ab.collection_id = r.collection_id
+			WHERE (r.type = 1 AND r.to_id = ?) OR (r.type = 2 AND r.to_id = ?)
+		`, u.Id, u.GroupId).Pluck("id", &sharedIds)
+	} else {
+		service.DB.Raw(`
+			SELECT ab.id FROM address_book ab
+			INNER JOIN address_book_collection_rules r ON ab.collection_id = r.collection_id
+			WHERE r.type = 1 AND r.to_id = ?
+		`, u.Id).Pluck("id", &sharedIds)
+	}
+
+	// Merge both sets of peer IDs
+	allIds := make(map[string]struct{})
+	for _, id := range abPeerIds {
+		allIds[id] = struct{}{}
+	}
+	for _, id := range sharedIds {
+		allIds[id] = struct{}{}
+	}
+	mergedPeerIds := make([]string, 0, len(allIds))
+	for id := range allIds {
+		mergedPeerIds = append(mergedPeerIds, id)
 	}
 
 	res := service.AllService.PeerService.List(query.Page, query.PageSize, func(tx *gorm.DB) {
-		if len(abPeerIds) > 0 {
-			tx.Where("user_id = ? OR id in (?)", u.Id, abPeerIds)
+		if len(mergedPeerIds) > 0 {
+			tx.Where("user_id = ? OR id in (?)", u.Id, mergedPeerIds)
 		} else {
 			tx.Where("user_id = ?", u.Id)
 		}
