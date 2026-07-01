@@ -62,7 +62,40 @@ func (ct *LoginLog) List(c *gin.Context) {
 		}
 		tx.Order("id desc")
 	})
-	response.Success(c, res)
+	// Enrich login logs with peer aliases
+	type LogEntry struct {
+		model.LoginLog
+		PeerAlias string `json:"peer_alias"`
+	}
+	var enriched []*LogEntry
+	var peerIds []string
+	for _, log := range res.LoginLogs {
+		if log.PeerId != "" {
+			peerIds = append(peerIds, log.PeerId)
+		}
+	}
+	aliasMap := make(map[string]string)
+	if len(peerIds) > 0 {
+		type Pa struct {
+			Id    string `json:"id"`
+			Alias string `json:"alias"`
+		}
+		var pa []Pa
+		service.DB.Model(&model.Peer{}).Where("id in ?", peerIds).Find(&pa)
+		for _, p := range pa {
+			aliasMap[p.Id] = p.Alias
+		}
+	}
+	for _, log := range res.LoginLogs {
+		enriched = append(enriched, &LogEntry{
+			LoginLog:  *log,
+			PeerAlias: aliasMap[log.PeerId],
+		})
+	}
+	if enriched == nil {
+		enriched = []*LogEntry{}
+	}
+	response.Success(c, gin.H{"list": enriched, "total": res.Total})
 }
 
 // Delete 删除
