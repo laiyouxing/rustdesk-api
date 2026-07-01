@@ -41,6 +41,12 @@ func (m *StationMessage) List(ctx *gin.Context) {
 
 	query.Count(&total)
 	query.Order("created_at desc").Offset((page - 1) * pageSize).Limit(pageSize).Find(&list)
+
+	// debug: log query context for diagnosing message visibility issues
+	service.Logger.Infof(
+		"[station_message.List] user_id=%d isAdmin=%v page=%d pageSize=%d total=%d list_len=%d",
+		user.Id, isAdmin, page, pageSize, total, len(list),
+	)
 	response.Success(ctx, gin.H{"list": list, "total": total})
 }
 
@@ -117,7 +123,11 @@ func (m *StationMessage) Send(ctx *gin.Context) {
 		SenderName: sender.Username,
 		ReceiverId: form.ReceiverId,
 	}
-	service.DB.Create(msg)
+	if err := service.DB.Create(msg).Error; err != nil {
+		service.Logger.Warn("station_message send failed:", err)
+		response.Fail(ctx, 101, "消息发送失败")
+		return
+	}
 	response.Success(ctx, nil)
 }
 
@@ -148,7 +158,11 @@ func (m *StationMessage) Broadcast(ctx *gin.Context) {
 		SenderName: sender.Username + "(管理员)",
 		ReceiverId: 0, // 0 = broadcast to all
 	}
-	service.DB.Create(msg)
+	if err := service.DB.Create(msg).Error; err != nil {
+		service.Logger.Warn("station_message broadcast failed:", err)
+		response.Fail(ctx, 101, "广播发送失败")
+		return
+	}
 	response.Success(ctx, nil)
 }
 
