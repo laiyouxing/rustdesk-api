@@ -115,15 +115,14 @@ func (m *StationMessage) Send(ctx *gin.Context) {
 		response.Fail(ctx, 101, "请输入消息内容")
 		return
 	}
-	msg := &model.StationMessage{
-		Type:       "user",
-		Title:      form.Title,
-		Content:    form.Content,
-		SenderId:   sender.Id,
-		SenderName: sender.Username,
-		ReceiverId: form.ReceiverId,
-	}
-	if err := service.DB.Create(msg).Error; err != nil {
+	if err := service.DB.Model(&model.StationMessage{}).Create(map[string]interface{}{
+		"type":        "user",
+		"title":       form.Title,
+		"content":     form.Content,
+		"sender_id":   sender.Id,
+		"sender_name": sender.Username,
+		"receiver_id": form.ReceiverId,
+	}).Error; err != nil {
 		service.Logger.Warn("station_message send failed:", err)
 		response.Fail(ctx, 101, "消息发送失败")
 		return
@@ -150,15 +149,14 @@ func (m *StationMessage) Broadcast(ctx *gin.Context) {
 		response.Fail(ctx, 101, "请输入消息内容")
 		return
 	}
-	msg := &model.StationMessage{
-		Type:       "broadcast",
-		Title:      form.Title,
-		Content:    fmt.Sprintf("【全体推送】%s\n%s", form.Title, form.Content),
-		SenderId:   sender.Id,
-		SenderName: sender.Username + "(管理员)",
-		ReceiverId: 0, // 0 = broadcast to all
-	}
-	if err := service.DB.Create(msg).Error; err != nil {
+	if err := service.DB.Model(&model.StationMessage{}).Create(map[string]interface{}{
+		"type":        "broadcast",
+		"title":       form.Title,
+		"content":     fmt.Sprintf("【全体推送】%s\n%s", form.Title, form.Content),
+		"sender_id":   sender.Id,
+		"sender_name": sender.Username + "(管理员)",
+		"receiver_id": 0,
+	}).Error; err != nil {
 		service.Logger.Warn("station_message broadcast failed:", err)
 		response.Fail(ctx, 101, "广播发送失败")
 		return
