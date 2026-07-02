@@ -284,6 +284,35 @@ func DatabaseAutoUpdate() {
 		}
 	}
 
+	// 兜底迁移：确保所有新表都存在。AutoMigrate 是幂等的，
+	// 已存在的表/列不会被改动。修复旧版本升级时因 version 记录
+	// 已是最新而跳过 Migrate，导致新增表（如 app_releases）缺失的问题。
+	if err := db.AutoMigrate(
+		&model.Version{},
+		&model.AppRelease{},
+		&model.User{},
+		&model.UserToken{},
+		&model.Tag{},
+		&model.AddressBook{},
+		&model.Peer{},
+		&model.Group{},
+		&model.UserThird{},
+		&model.Oauth{},
+		&model.LoginLog{},
+		&model.ShareRecord{},
+		&model.AuditConn{},
+		&model.AuditFile{},
+		&model.AddressBookCollection{},
+		&model.AddressBookCollectionRule{},
+		&model.ServerCmd{},
+		&model.DeviceGroup{},
+		&model.AlertConfig{},
+		&model.AlertTarget{},
+		&model.StationMessage{},
+		&model.ClientDownload{},
+	); err != nil {
+		global.Logger.Error("fallback migrate err :=>", err)
+	}
 }
 func Migrate(version uint) {
 	global.Logger.Info("Migrating....", version)
