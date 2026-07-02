@@ -158,7 +158,6 @@ func (o *Oauth) Detail(c *gin.Context) {
 		return
 	}
 	response.Fail(c, 101, response.TranslateMsg(c, "ItemNotFound"))
-	return
 }
 
 // Create 创建Oauth
@@ -290,7 +289,6 @@ func (o *Oauth) Delete(c *gin.Context) {
 			return
 		}
 		response.Fail(c, 101, err.Error())
-		return
 	}
 	response.Fail(c, 101, response.TranslateMsg(c, "ItemNotFound"))
 }
