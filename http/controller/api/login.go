@@ -72,6 +72,8 @@ func (l *Login) Login(c *gin.Context) {
 	ref := c.GetHeader("referer")
 	if ref != "" {
 		f.DeviceInfo.Type = model.LoginLogClientWeb
+	} else if f.DeviceInfo.Type == "" || f.DeviceInfo.Type == "client" {
+		f.DeviceInfo.Type = model.LoginLogClientApp
 	}
 
 	ut := service.AllService.UserService.Login(u, &model.LoginLog{
