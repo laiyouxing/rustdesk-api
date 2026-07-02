@@ -62,7 +62,7 @@ func (s *NotifyService) sendSmtp(cfg *model.AlertConfig, title, content string) 
 	if cfg.SmtpHost == "" || cfg.SmtpTo == "" {
 		return
 	}
-	addr := fmt.Sprintf("%s:%d", cfg.SmtpHost, cfg.SmtpPort)
+	addr := net.JoinHostPort(cfg.SmtpHost, fmt.Sprintf("%d", cfg.SmtpPort))
 	auth := smtp.PlainAuth("", cfg.SmtpUser, cfg.SmtpPass, cfg.SmtpHost)
 
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\n%s",
