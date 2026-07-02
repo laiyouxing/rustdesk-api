@@ -76,7 +76,6 @@ func (a *Audit) ConnDelete(c *gin.Context) {
 			return
 		}
 		response.Fail(c, 101, err.Error())
-		return
 	}
 	response.Fail(c, 101, response.TranslateMsg(c, "ItemNotFound"))
 }
@@ -109,7 +108,6 @@ func (a *Audit) BatchConnDelete(c *gin.Context) {
 		return
 	}
 	response.Fail(c, 101, err.Error())
-	return
 }
 
 // FileList 列表
@@ -175,7 +173,6 @@ func (a *Audit) FileDelete(c *gin.Context) {
 			return
 		}
 		response.Fail(c, 101, err.Error())
-		return
 	}
 	response.Fail(c, 101, response.TranslateMsg(c, "ItemNotFound"))
 }
@@ -208,5 +205,4 @@ func (a *Audit) BatchFileDelete(c *gin.Context) {
 		return
 	}
 	response.Fail(c, 101, err.Error())
-	return
 }
