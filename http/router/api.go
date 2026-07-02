@@ -66,6 +66,16 @@ func ApiInit(g *gin.Engine) {
 		frg.GET("/version/latest", v.LatestVersion)
 	}
 
+	{
+		cd := &api.ClientDownload{}
+		frg.GET("/client-downloads", cd.List)
+	}
+
+	// 用户端下载页面
+	g.GET("/downloads", func(c *gin.Context) {
+		c.HTML(200, "client_downloads.html", gin.H{})
+	})
+
 	if global.Config.App.WebClient == 1 {
 		WebClientRoutes(frg)
 	}

@@ -28,6 +28,7 @@ type Service struct {
 	*DashboardService
 	*AlertService
 	*NotifyService
+	*ClientDownloadService
 }
 
 type Dependencies struct {

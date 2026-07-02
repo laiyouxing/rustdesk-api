@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>客户端下载 - RustDesk</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; color: #333; }
+.wrapper { max-width: 800px; margin: 0 auto; padding: 60px 20px; }
+.header { text-align: center; margin-bottom: 40px; }
+.header h1 { font-size: 32px; color: #fff; margin-bottom: 8px; }
+.header p { font-size: 16px; color: rgba(255,255,255,.85); }
+.card { background: #fff; border-radius: 12px; box-shadow: 0 8px 32px rgba(0,0,0,.15); overflow: hidden; }
+.card-header { padding: 20px 24px; border-bottom: 1px solid #eee; font-size: 18px; font-weight: 600; color: #444; }
+.card-body { padding: 16px 24px; }
+.download-item { display: flex; align-items: center; padding: 14px 0; border-bottom: 1px solid #f0f0f0; }
+.download-item:last-child { border-bottom: none; }
+.download-icon { width: 44px; height: 44px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 22px; margin-right: 16px; flex-shrink: 0; }
+.download-icon.win { background: #e6f2ff; }
+.download-icon.mac { background: #f0f0f0; }
+.download-icon.linux { background: #fff3e0; }
+.download-icon.android { background: #e8f5e9; }
+.download-icon.ios { background: #e3f2fd; }
+.download-icon.web { background: #f3e5f5; }
+.download-icon.other { background: #f5f5f5; }
+.download-info { flex: 1; min-width: 0; }
+.download-name { font-size: 15px; font-weight: 600; color: #333; }
+.download-platform { font-size: 12px; color: #999; margin-top: 2px; }
+.download-btn { flex-shrink: 0; margin-left: 16px; }
+.download-btn a { display: inline-block; padding: 8px 24px; background: #2c8cff; color: #fff; text-decoration: none; border-radius: 6px; font-size: 14px; font-weight: 500; transition: background .2s; }
+.download-btn a:hover { background: #1a7ae6; }
+.empty-state { text-align: center; color: #999; padding: 40px 20px; }
+.empty-state .icon { font-size: 48px; margin-bottom: 12px; display: block; }
+.loading { text-align: center; color: #999; padding: 40px; }
+.error-state { text-align: center; color: #ff4d4f; padding: 40px; }
+</style>
+</head>
+<body>
+<div class="wrapper">
+  <div class="header">
+    <h1>📥 RustDesk 客户端下载</h1>
+    <p>选择您需要的客户端版本进行下载</p>
+  </div>
+
+  <div class="card">
+    <div class="card-header">📂 下载列表</div>
+    <div class="card-body" id="downloadList">
+      <div class="loading">加载中...</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const platformIcons = {
+  windows: '🪟', macos: '🍎', linux: '🐧', ubuntu: '🐧',
+  android: '📱', ios: '📱', web: '🌐', other: '📦'
+};
+const platformNames = {
+  windows: 'Windows', macos: 'macOS', linux: 'Linux', ubuntu: 'Ubuntu',
+  android: 'Android', ios: 'iOS', web: 'Web', other: '其他'
+};
+
+async function load() {
+  const el = document.getElementById('downloadList');
+  try {
+    const res = await fetch('/api/client-downloads');
+    const data = await res.json();
+    if (data.code !== 0 || !data.data || !data.data.list) {
+      el.innerHTML = '<div class="error-state">❌ 获取下载列表失败</div>';
+      return;
+    }
+    const list = data.data.list;
+    if (list.length === 0) {
+      el.innerHTML = '<div class="empty-state"><span class="icon">📭</span>暂无可用下载链接</div>';
+      return;
+    }
+    el.innerHTML = list.map(v => {
+      const icon = platformIcons[v.platform] || '📦';
+      const platName = platformNames[v.platform] || v.platform || '其他';
+      const iconClass = v.platform || 'other';
+      return '<div class="download-item">'
+        + '<div class="download-icon ' + iconClass + '">' + icon + '</div>'
+        + '<div class="download-info">'
+        + '<div class="download-name">' + esc(v.name || '') + '</div>'
+        + '<div class="download-platform">' + platName + '</div>'
+        + '</div>'
+        + '<div class="download-btn"><a href="' + esc(v.url) + '" target="_blank" rel="noopener noreferrer">下载</a></div>'
+        + '</div>';
+    }).join('');
+  } catch(e) {
+    el.innerHTML = '<div class="error-state">❌ 网络错误，请稍后重试</div>';
+  }
+}
+
+function esc(s) { if (!s) return ''; return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+load();
+</script>
+</body>
+</html>

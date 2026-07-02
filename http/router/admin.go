@@ -47,6 +47,7 @@ func Init(g *gin.Engine) {
 
 	ShareRecordBind(adg)
 	VersionBind(adg)
+	ClientDownloadBind(adg)
 	MyBind(adg)
 
 	DashboardBind(adg)
@@ -368,6 +369,19 @@ func VersionBind(rg *gin.RouterGroup) {
 	{
 		cont := &admin.Version{}
 		vR.GET("/", cont.VersionAdmin)
+		vR.GET("/list", cont.List)
+		vR.POST("/create", cont.Create)
+		vR.POST("/update", cont.Update)
+		vR.POST("/delete", cont.Delete)
+		vR.POST("/setEnable", cont.SetEnable)
+	}
+}
+
+func ClientDownloadBind(rg *gin.RouterGroup) {
+	vR := rg.Group("/client_download").Use(middleware.AdminPrivilege())
+	{
+		cont := &admin.ClientDownload{}
+		vR.GET("/", cont.Page)
 		vR.GET("/list", cont.List)
 		vR.POST("/create", cont.Create)
 		vR.POST("/update", cont.Update)
