@@ -5,3 +5,11 @@ runtime/*
 go.sum
 release
 data/rustdeskapi.db*.exe
+# 防止 go build 产物被提交
+cmd.exe
+*.exe
+api-server.exe
+api-server
+main.exe
+main
+
