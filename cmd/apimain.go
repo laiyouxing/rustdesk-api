@@ -286,8 +286,9 @@ func DatabaseAutoUpdate() {
 
 	// 兜底迁移：确保所有新表都存在。AutoMigrate 是幂等的，
 	// 已存在的表/列不会被改动。修复旧版本升级时因 version 记录
-	// 已是最新而跳过 Migrate，导致新增表（如 app_releases）缺失的问题。
-	if err := db.AutoMigrate(
+	// 已是最新而跳过 Migrate，导致新增表（如 app_releases/station_messages）缺失的问题。
+	// 对每个模型单独 AutoMigrate，避免一个失败影响其他。
+	fallbackModels := []interface{}{
 		&model.Version{},
 		&model.AppRelease{},
 		&model.User{},
@@ -310,8 +311,11 @@ func DatabaseAutoUpdate() {
 		&model.AlertTarget{},
 		&model.StationMessage{},
 		&model.ClientDownload{},
-	); err != nil {
-		global.Logger.Error("fallback migrate err :=>", err)
+	}
+	for _, m := range fallbackModels {
+		if err := db.AutoMigrate(m); err != nil {
+			global.Logger.Errorf("fallback migrate %T err: %v", m, err)
+		}
 	}
 }
 func Migrate(version uint) {
