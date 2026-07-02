@@ -29,8 +29,8 @@ func (s *AppReleaseService) List(page, pageSize uint) ([]*model.AppRelease, int6
 	return list, total
 }
 
-func (s *AppReleaseService) Create(v *model.AppRelease) {
-	DB.Create(v)
+func (s *AppReleaseService) Create(v *model.AppRelease) error {
+	return DB.Create(v).Error
 }
 
 func (s *AppReleaseService) Update(v *model.AppRelease) {

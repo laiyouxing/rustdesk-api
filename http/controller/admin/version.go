@@ -48,8 +48,21 @@ func (v *Version) Create(c *gin.Context) {
 		response.Fail(c, 101, "版本号不能为空")
 		return
 	}
-	ver.Status = int(model.COMMON_STATUS_ENABLE)
-	service.AllService.AppReleaseService.Create(ver)
+	if ver.Platform == "" {
+		ver.Platform = "windows"
+	}
+	if ver.Url == "" {
+		response.Fail(c, 101, "下载链接不能为空")
+		return
+	}
+	// 未传状态时默认启用；已传则尊重前端的设置
+	if ver.Status == 0 {
+		ver.Status = int(model.COMMON_STATUS_ENABLE)
+	}
+	if err := service.AllService.AppReleaseService.Create(ver); err != nil {
+		response.Fail(c, 101, "保存失败: "+err.Error())
+		return
+	}
 	response.Success(c, nil)
 }
 
