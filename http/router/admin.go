@@ -62,6 +62,7 @@ func Init(g *gin.Engine) {
 func DashboardBind(adg *gin.RouterGroup) {
 	cont := &admin.Dashboard{}
 	rg := adg.Group("/dashboard")
+	rg.GET("/", cont.Page)
 	rg.GET("/stats", cont.Stats)
 }
 
@@ -194,6 +195,7 @@ func PeerBind(rg *gin.RouterGroup) {
 	aR.Use(middleware.AdminPrivilege())
 	{
 		cont := &admin.Peer{}
+		aR.GET("/", cont.Page)
 		aR.GET("/list", cont.List)
 		aR.GET("/detail/:id", cont.Detail)
 		aR.POST("/create", cont.Create)
