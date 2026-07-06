@@ -21,6 +21,7 @@ import (
 	"github.com/lejianwen/rustdesk-api/v2/utils"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
 	"github.com/spf13/cobra"
+	"gorm.io/gorm"
 )
 
 const DatabaseVersion = 265
@@ -315,6 +316,51 @@ func DatabaseAutoUpdate() {
 	for _, m := range fallbackModels {
 		if err := db.AutoMigrate(m); err != nil {
 			global.Logger.Errorf("fallback migrate %T err: %v", m, err)
+		}
+	}
+
+	// 终极兜底：用原生 SQL 确保关键表存在（应对 AutoMigrate 可能因 GORM 版本差异失败的场景）
+	ensureTable(db, &model.AppRelease{}, "app_releases", `CREATE TABLE IF NOT EXISTS app_releases (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		version varchar(32) NOT NULL DEFAULT '',
+		platform varchar(16) NOT NULL DEFAULT '',
+		url varchar(512) NOT NULL DEFAULT '',
+		note text,
+		status tinyint DEFAULT 1,
+		created_at datetime,
+		updated_at datetime
+	)`)
+	ensureTable(db, &model.StationMessage{}, "station_messages", `CREATE TABLE IF NOT EXISTS station_messages (
+		row_id INTEGER PRIMARY KEY AUTOINCREMENT,
+		type varchar(32) NOT NULL DEFAULT '',
+		title varchar(200) NOT NULL DEFAULT '',
+		content text,
+		peer_id varchar(128) NOT NULL DEFAULT '',
+		sender_id integer NOT NULL DEFAULT 0,
+		sender_name varchar(100) NOT NULL DEFAULT '',
+		receiver_id integer NOT NULL DEFAULT 0,
+		is_read integer NOT NULL DEFAULT 0,
+		created_at integer
+	)`)
+	ensureTable(db, &model.ClientDownload{}, "client_downloads", `CREATE TABLE IF NOT EXISTS client_downloads (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		version varchar(32) NOT NULL DEFAULT '',
+		platform varchar(16) NOT NULL DEFAULT '',
+		url varchar(512) NOT NULL DEFAULT '',
+		note text,
+		status tinyint DEFAULT 1,
+		created_at datetime,
+		updated_at datetime
+	)`)
+}
+
+func ensureTable(db *gorm.DB, m interface{}, tableName, createSQL string) {
+	if !db.Migrator().HasTable(m) {
+		global.Logger.Warnf("表 %s 不存在，尝试用原生 SQL 创建...", tableName)
+		if err := db.Exec(createSQL).Error; err != nil {
+			global.Logger.Errorf("原生 SQL 创建表 %s 失败: %v", tableName, err)
+		} else {
+			global.Logger.Infof("原生 SQL 创建表 %s 成功", tableName)
 		}
 	}
 }
