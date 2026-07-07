@@ -112,6 +112,10 @@ func (m *StationMessage) Send(ctx *gin.Context) {
 		response.Fail(ctx, 101, "请选择接收人")
 		return
 	}
+	if form.ReceiverId == sender.Id {
+		response.Fail(ctx, 101, "不能给自己发送消息")
+		return
+	}
 	if form.Title == "" && form.Content == "" {
 		response.Fail(ctx, 101, "请输入消息内容")
 		return
