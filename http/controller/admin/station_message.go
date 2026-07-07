@@ -24,7 +24,8 @@ func (m *StationMessage) List(ctx *gin.Context) {
 	isAdmin := service.AllService.UserService.IsAdmin(user)
 
 	// Non-admin users only see messages addressed to them or broadcasts
-	if !isAdmin {
+	// Admin users can optionally filter by passing scope=own
+	if !isAdmin || ctx.Query("scope") == "own" {
 		query = query.Where("(receiver_id = ? OR receiver_id = 0)", user.Id)
 	}
 
