@@ -118,7 +118,8 @@ func (abcr *AddressBookCollectionRule) CheckForm(t *model.AddressBookCollectionR
 	}
 
 	//check to_id
-	if t.Type == model.ShareAddressBookRuleTypePersonal {
+	switch t.Type {
+	case model.ShareAddressBookRuleTypePersonal:
 		if t.ToId == t.UserId {
 			return "CannotShareToSelf", false
 		}
@@ -126,12 +127,12 @@ func (abcr *AddressBookCollectionRule) CheckForm(t *model.AddressBookCollectionR
 		if tou.Id == 0 {
 			return "ItemNotFound", false
 		}
-	} else if t.Type == model.ShareAddressBookRuleTypeGroup {
+	case model.ShareAddressBookRuleTypeGroup:
 		tog := service.AllService.GroupService.InfoById(t.ToId)
 		if tog.Id == 0 {
 			return "ItemNotFound", false
 		}
-	} else {
+	default:
 		return "ParamsError", false
 	}
 	// 重复检查
