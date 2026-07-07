@@ -24,17 +24,19 @@ func (v *Version) LatestVersion(c *gin.Context) {
 	ver := service.AllService.AppReleaseService.Latest(platform)
 	if ver == nil || ver.Id == 0 {
 		response.Success(c, gin.H{
-			"version":  "",
-			"url":      "",
-			"platform": platform,
-			"note":     "",
+			"version":      "",
+			"url":          "",
+			"platform":     platform,
+			"note":         "",
+			"force_update": false,
 		})
 		return
 	}
 	response.Success(c, gin.H{
-		"version":  ver.Version,
-		"url":      ver.Url,
-		"platform": ver.Platform,
-		"note":     ver.Note,
+		"version":      ver.Version,
+		"url":          ver.Url,
+		"platform":     ver.Platform,
+		"note":         ver.Note,
+		"force_update": ver.ForceUpdate == 1,
 	})
 }
