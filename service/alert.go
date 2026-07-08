@@ -129,8 +129,8 @@ func (s *AlertService) checkOfflineDevices() {
 		}
 		query.Limit(10).Find(&offlinePeers)
 
-		// 去重检查：5分钟内已通知过则跳过
-		if len(offlinePeers) > 0 && now-cfg.LastNotifiedAt >= 300 {
+		// 去重检查：1小时内已通知过则跳过
+		if len(offlinePeers) > 0 && now-cfg.LastNotifiedAt >= 3600 {
 			for _, peer := range offlinePeers {
 				hostname := peer.Hostname
 				if hostname == "" {
