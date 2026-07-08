@@ -77,12 +77,37 @@ func (s *NotifyService) sendSmtp(cfg *model.AlertConfig, title, content string) 
 
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 
-	var conn net.Conn
-	var err error
+	deliver := func(client *smtp.Client) {
+		defer client.Close()
+		if err := client.Auth(auth); err != nil {
+			Logger.Warn("SMTP auth failed: ", err)
+			return
+		}
+		if err := client.Mail(cfg.SmtpUser); err != nil {
+			Logger.Warn("SMTP mail from failed: ", err)
+			return
+		}
+		for _, to := range recipients {
+			if err := client.Rcpt(to); err != nil {
+				Logger.Warn("SMTP Rcpt failed for ", to, ": ", err)
+			}
+		}
+		w, err := client.Data()
+		if err != nil {
+			Logger.Warn("SMTP data failed: ", err)
+			return
+		}
+		if _, err := io.Copy(w, strings.NewReader(msg)); err != nil {
+			Logger.Warn("SMTP write body failed: ", err)
+		}
+		if err := w.Close(); err != nil {
+			Logger.Warn("SMTP close body failed: ", err)
+		}
+	}
 
 	if cfg.SmtpPort == 587 {
 		// STARTTLS: 先明文连接，再升级到 TLS
-		conn, err = net.DialTimeout("tcp", addr, 10*time.Second)
+		conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 		if err != nil {
 			Logger.Warn("SMTP dial failed: ", err)
 			return
@@ -95,63 +120,27 @@ func (s *NotifyService) sendSmtp(cfg *model.AlertConfig, title, content string) 
 		}
 		if err = client.StartTLS(tlsConfig); err != nil {
 			client.Close()
+			conn.Close()
 			Logger.Warn("SMTP STARTTLS failed: ", err)
 			return
 		}
-		defer client.Close()
-		if err = client.Auth(auth); err != nil {
-			Logger.Warn("SMTP auth failed: ", err)
-			return
-		}
-		if err = client.Mail(cfg.SmtpUser); err != nil {
-			Logger.Warn("SMTP mail from failed: ", err)
-			return
-		}
-		for _, to := range recipients {
-			if err = client.Rcpt(to); err != nil {
-				Logger.Warn("SMTP Rcpt failed for ", to, ": ", err)
-			}
-		}
-		w, err := client.Data()
-		if err != nil {
-			Logger.Warn("SMTP data failed: ", err)
-			return
-		}
-		io.Copy(w, strings.NewReader(msg))
-		w.Close()
+		deliver(client)
+		conn.Close()
 	} else {
 		// 默认 465 SMTPS: 直接 TLS 连接
-		conn, err = tls.Dial("tcp", addr, tlsConfig)
+		conn, err := tls.Dial("tcp", addr, tlsConfig)
 		if err != nil {
 			Logger.Warn("SMTP TLS dial failed: ", err)
 			return
 		}
 		client, err := smtp.NewClient(conn, cfg.SmtpHost)
 		if err != nil {
+			conn.Close()
 			Logger.Warn("SMTP new client failed: ", err)
 			return
 		}
-		defer client.Close()
-		if err = client.Auth(auth); err != nil {
-			Logger.Warn("SMTP auth failed: ", err)
-			return
-		}
-		if err = client.Mail(cfg.SmtpUser); err != nil {
-			Logger.Warn("SMTP mail from failed: ", err)
-			return
-		}
-		for _, to := range recipients {
-			if err = client.Rcpt(to); err != nil {
-				Logger.Warn("SMTP Rcpt failed for ", to, ": ", err)
-			}
-		}
-		w, err := client.Data()
-		if err != nil {
-			Logger.Warn("SMTP data failed: ", err)
-			return
-		}
-		io.Copy(w, strings.NewReader(msg))
-		w.Close()
+		deliver(client)
+		conn.Close()
 	}
 }
 
