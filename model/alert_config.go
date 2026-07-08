@@ -15,6 +15,7 @@ type AlertConfig struct {
 	Enabled        int    `json:"enabled" gorm:"default:1"`                          // 1=enabled 2=disabled
 	MonitorAll     int    `json:"monitor_all" gorm:"default:1"`                      // 1=monitor all peers, 2=monitor selected targets only
 	LastNotifiedAt int64  `json:"last_notified_at" gorm:"default:0"`                  // 上次通知时间戳，用于去重
+	NotifiedPeers  string `json:"notified_peers" gorm:"type:text"`                   // JSON map[peerId]notifiedAt, 基于 peer 级别的去重
 }
 
 func (AlertConfig) TableName() string {

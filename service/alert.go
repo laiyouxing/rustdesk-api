@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"time"
@@ -144,9 +145,33 @@ func (s *AlertService) checkOfflineDevices() {
 		}
 		query.Limit(10).Find(&offlinePeers)
 
-		// 去重检查：1小时内已通知过则跳过
-		if len(offlinePeers) > 0 && now-cfg.LastNotifiedAt >= 3600 {
-			for _, peer := range offlinePeers {
+		if len(offlinePeers) == 0 {
+			continue
+		}
+
+		// 解析 NotifiedPeers：map[peerId]lastNotifiedAt
+		notifiedMap := make(map[string]int64)
+		if cfg.NotifiedPeers != "" {
+			json.Unmarshal([]byte(cfg.NotifiedPeers), &notifiedMap)
+		}
+
+		// 筛选出未在冷却期内通知过的 peer（冷却期1小时）
+		var newOfflinePeers []model.Peer
+		for _, peer := range offlinePeers {
+			if lastNotify, ok := notifiedMap[peer.Id]; ok && now-lastNotify < 3600 {
+				continue // 该 peer 1小时内已通知过，跳过
+			}
+			newOfflinePeers = append(newOfflinePeers, peer)
+		}
+
+		if len(newOfflinePeers) == 0 {
+			continue
+		}
+		// 配置级别兜底：1小时内已发过批次通知则跳过
+		if now-cfg.LastNotifiedAt < 3600 {
+			continue
+		}
+		for _, peer := range newOfflinePeers {
 				hostname := peer.Hostname
 				if hostname == "" {
 					hostname = peer.Id
@@ -167,9 +192,14 @@ func (s *AlertService) checkOfflineDevices() {
 				if stationCfg, ok := userStationCfg[cfg.UserId]; ok && stationCfg != nil {
 					AllService.NotifyService.SendStationMessage(cfg.UserId, title, content, peer.Id)
 				}
+				// 记录该 peer 的通知时间
+				notifiedMap[peer.Id] = now
 			}
-			// 批量通知完后统一更新，避免重复触发
-			DB.Model(&model.AlertConfig{}).Where("row_id = ?", cfg.RowId).Update("last_notified_at", now)
-		}
+			// 持久化 NotifiedPeers
+			encoded, _ := json.Marshal(notifiedMap)
+			DB.Model(&model.AlertConfig{}).Where("row_id = ?", cfg.RowId).Updates(map[string]interface{}{
+				"last_notified_at": now,
+				"notified_peers":   string(encoded),
+			})
 	}
 }
