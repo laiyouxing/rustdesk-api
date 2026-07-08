@@ -32,5 +32,42 @@ func (a *Audit) List(c *gin.Context) {
 		tx.Where("action = 'new'")
 		tx.Order("id desc")
 	})
-	response.Success(c, res)
+	// Enrich with peer hostname/alias
+	type ConnEntry struct {
+		model.AuditConn
+		PeerHostname string `json:"peer_hostname"`
+		PeerAlias    string `json:"peer_alias"`
+	}
+	var enriched []*ConnEntry
+	var targetPeerIds []string
+	for _, conn := range res.AuditConns {
+		if conn.PeerId != "" {
+			targetPeerIds = append(targetPeerIds, conn.PeerId)
+		}
+	}
+	hostMap := make(map[string]struct{ Hostname, Alias string })
+	if len(targetPeerIds) > 0 {
+		type Pa struct {
+			Id       string
+			Hostname string
+			Alias    string
+		}
+		var pa []Pa
+		service.DB.Model(&model.Peer{}).Where("id in ?", targetPeerIds).Find(&pa)
+		for _, p := range pa {
+			hostMap[p.Id] = struct{ Hostname, Alias string }{p.Hostname, p.Alias}
+		}
+	}
+	for _, conn := range res.AuditConns {
+		h := hostMap[conn.PeerId]
+		enriched = append(enriched, &ConnEntry{
+			AuditConn:    *conn,
+			PeerHostname: h.Hostname,
+			PeerAlias:    h.Alias,
+		})
+	}
+	if enriched == nil {
+		enriched = []*ConnEntry{}
+	}
+	response.Success(c, gin.H{"list": enriched, "total": res.Total})
 }

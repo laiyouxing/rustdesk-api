@@ -42,7 +42,44 @@ func (a *Audit) ConnList(c *gin.Context) {
 		}
 		tx.Order("id desc")
 	})
-	response.Success(c, res)
+	// Enrich with peer hostname/alias
+	type ConnEntry struct {
+		model.AuditConn
+		PeerHostname string `json:"peer_hostname"`
+		PeerAlias    string `json:"peer_alias"`
+	}
+	var enriched []*ConnEntry
+	var peerIds []string
+	for _, conn := range res.AuditConns {
+		if conn.PeerId != "" {
+			peerIds = append(peerIds, conn.PeerId)
+		}
+	}
+	hostMap := make(map[string]struct{ Hostname, Alias string })
+	if len(peerIds) > 0 {
+		type Pa struct {
+			Id       string
+			Hostname string
+			Alias    string
+		}
+		var pa []Pa
+		service.DB.Model(&model.Peer{}).Where("id in ?", peerIds).Find(&pa)
+		for _, p := range pa {
+			hostMap[p.Id] = struct{ Hostname, Alias string }{p.Hostname, p.Alias}
+		}
+	}
+	for _, conn := range res.AuditConns {
+		h := hostMap[conn.PeerId]
+		enriched = append(enriched, &ConnEntry{
+			AuditConn:    *conn,
+			PeerHostname: h.Hostname,
+			PeerAlias:    h.Alias,
+		})
+	}
+	if enriched == nil {
+		enriched = []*ConnEntry{}
+	}
+	response.Success(c, gin.H{"list": enriched, "total": res.Total})
 }
 
 // ConnDelete 删除
