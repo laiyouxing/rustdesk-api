@@ -64,7 +64,7 @@ func (i *Index) Heartbeat(c *gin.Context) {
 	resp := gin.H{}
 
 	// 查找用户和分组，获取关联的策略
-	user := service.AllService.UserService.FindById(peer.UserId)
+	user := service.AllService.UserService.InfoById(peer.UserId)
 	if user != nil && user.Id > 0 {
 		// 查找策略：先查用户直接绑定的，再查分组绑定的
 		var strategies []model.Strategy
