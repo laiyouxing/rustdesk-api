@@ -25,7 +25,7 @@ func (s *DashboardService) Stats() *DashboardStats {
 	DB.Model(&model.User{}).Count(&stats.TotalUsers)
 
 	todayStart := time.Now().Truncate(24 * time.Hour).Unix()
-	DB.Model(&model.LoginLog{}).Where("created_at > ?", todayStart).Count(&stats.TodayConnections)
+	DB.Model(&model.AuditConn{}).Where("action = 'new' and created_at > ?", todayStart).Count(&stats.TodayConnections)
 
 	return stats
 }
@@ -41,7 +41,7 @@ func (s *DashboardService) UserStats(userId uint) *DashboardStats {
 	// 普通用户不显示总用户数
 	stats.TotalUsers = 0
 	todayStart := time.Now().Truncate(24 * time.Hour).Unix()
-	DB.Model(&model.LoginLog{}).Where("user_id = ? and created_at > ?", userId, todayStart).Count(&stats.TodayConnections)
+	DB.Model(&model.AuditConn{}).Where("action = 'new' and created_at > ?", todayStart).Count(&stats.TodayConnections)
 
 	return stats
 }

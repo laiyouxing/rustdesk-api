@@ -354,6 +354,10 @@ func MyBind(rg *gin.RouterGroup) {
 		rg.POST("/my/login_log/delete", cont.Delete)
 		rg.POST("/my/login_log/batchDelete", cont.BatchDelete)
 	}
+	{
+		cont := &my.Audit{}
+		rg.GET("/my/audit_conn/list", cont.List)
+	}
 }
 
 func ShareRecordBind(rg *gin.RouterGroup) {
