@@ -119,7 +119,9 @@ func (s *AlertService) checkOfflineDevices() {
 		peerIds, monitorAll := s.getMonitoredPeerIds(&cfg)
 
 		var offlinePeers []model.Peer
-		query := DB.Where("last_online_time > 0 AND last_online_time < ?", now-threshold)
+		// 只查询最近1小时内离线且超过阈值的设备
+		oneHourAgo := now - 3600
+		query := DB.Where("last_online_time > ? AND last_online_time < ?", oneHourAgo, now-threshold)
 		if !monitorAll && len(peerIds) > 0 {
 			query = query.Where("id in (?)", peerIds)
 		} else if !monitorAll {
