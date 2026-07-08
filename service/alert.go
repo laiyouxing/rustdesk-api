@@ -129,34 +129,31 @@ func (s *AlertService) checkOfflineDevices() {
 		}
 		query.Limit(10).Find(&offlinePeers)
 
-		for _, peer := range offlinePeers {
-			hostname := peer.Hostname
-			if hostname == "" {
-				hostname = peer.Id
-			}
-			alias := peer.Alias
-			if alias == "" {
-				alias = hostname
-			}
-			lastOnline := time.Unix(peer.LastOnlineTime, 0).Format("2006-01-02 15:04:05")
-			title := "设备离线告警"
-			content := fmt.Sprintf("设备：%s\n别名：%s\nID：%s\n离线时长：%d 分钟\n最后在线：%s",
-				hostname, alias, peer.Id, cfg.OfflineMin, lastOnline)
+		// 去重检查：5分钟内已通知过则跳过
+		if len(offlinePeers) > 0 && now-cfg.LastNotifiedAt >= 300 {
+			for _, peer := range offlinePeers {
+				hostname := peer.Hostname
+				if hostname == "" {
+					hostname = peer.Id
+				}
+				alias := peer.Alias
+				if alias == "" {
+					alias = hostname
+				}
+				lastOnline := time.Unix(peer.LastOnlineTime, 0).Format("2006-01-02 15:04:05")
+				title := "设备离线告警"
+				content := fmt.Sprintf("设备：%s\n别名：%s\nID：%s\n离线时长：%d 分钟\n最后在线：%s",
+					hostname, alias, peer.Id, cfg.OfflineMin, lastOnline)
 
-			// 去重检查：上次通知时间距今是否超过一个检测周期(3min)
-			if cfg.LastNotifiedAt > now-180 {
-				continue
+				// 发送外部渠道通知
+				AllService.NotifyService.SendByConfig(&cfg, title, content)
+
+				// 该用户是否有站内消息配置？有则发站内消息
+				if stationCfg, ok := userStationCfg[cfg.UserId]; ok && stationCfg != nil {
+					AllService.NotifyService.SendStationMessage(cfg.UserId, title, content, peer.Id)
+				}
 			}
-
-			// 发送外部渠道通知
-			AllService.NotifyService.SendByConfig(&cfg, title, content)
-
-			// 该用户是否有站内消息配置？有则发站内消息（只发给该用户自己）
-			if stationCfg, ok := userStationCfg[cfg.UserId]; ok && stationCfg != nil {
-				AllService.NotifyService.SendStationMessage(cfg.UserId, title, content, peer.Id)
-			}
-
-			// 更新上次通知时间，避免重复触发
+			// 批量通知完后统一更新，避免重复触发
 			DB.Model(&model.AlertConfig{}).Where("row_id = ?", cfg.RowId).Update("last_notified_at", now)
 		}
 	}
