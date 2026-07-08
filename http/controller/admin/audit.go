@@ -8,6 +8,7 @@ import (
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"github.com/lejianwen/rustdesk-api/v2/service"
 	"gorm.io/gorm"
+	"time"
 )
 
 type Audit struct {
@@ -40,13 +41,15 @@ func (a *Audit) ConnList(c *gin.Context) {
 		if query.FromPeer != "" {
 			tx.Where("from_peer like ?", "%"+query.FromPeer+"%")
 		}
+		tx.Where("action = 'new'")
 		tx.Order("id desc")
 	})
 	// Enrich with peer hostname/alias
 	type ConnEntry struct {
 		model.AuditConn
-		PeerHostname string `json:"peer_hostname"`
-		PeerAlias    string `json:"peer_alias"`
+		PeerHostname  string `json:"peer_hostname"`
+		PeerAlias     string `json:"peer_alias"`
+		CloseTimeStr  string `json:"close_time_str"`
 	}
 	var enriched []*ConnEntry
 	var peerIds []string
@@ -70,10 +73,15 @@ func (a *Audit) ConnList(c *gin.Context) {
 	}
 	for _, conn := range res.AuditConns {
 		h := hostMap[conn.PeerId]
+		closeTimeStr := ""
+		if conn.CloseTime > 0 {
+			closeTimeStr = time.Unix(conn.CloseTime, 0).Format("2006-01-02 15:04:05")
+		}
 		enriched = append(enriched, &ConnEntry{
-			AuditConn:    *conn,
-			PeerHostname: h.Hostname,
-			PeerAlias:    h.Alias,
+			AuditConn:     *conn,
+			PeerHostname:  h.Hostname,
+			PeerAlias:     h.Alias,
+			CloseTimeStr:  closeTimeStr,
 		})
 	}
 	if enriched == nil {
