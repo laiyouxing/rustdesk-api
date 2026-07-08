@@ -63,43 +63,91 @@ func (i *Index) Heartbeat(c *gin.Context) {
 
 	resp := gin.H{}
 
-	// 查找用户和分组，获取关联的策略
-	user := service.AllService.UserService.InfoById(peer.UserId)
-	if user != nil && user.Id > 0 {
-		// 查找策略：先查用户直接绑定的，再查分组绑定的
-		var strategies []model.Strategy
-		tx := service.DB.Where("status = 1")
-		if peer.GroupId > 0 {
-			// 优先查找分组关联的策略（按优先级降序）
-			tx = tx.Where("user_id = ?", peer.GroupId)
+	// 策略下发：按用户指定优先级查找
+	// 绑定优先级: user(最高) > group > tag > global(兜底)
+	// 同类型的多个策略按数值优先级取最高
+	var foundStrategy *model.Strategy
+
+	// 查询所有启用的策略，按数值优先级降序
+	var allEnabled []model.Strategy
+	service.DB.Where("status = 1").Order("priority desc").Find(&allEnabled)
+
+	// 收集该设备关联的标签ID（通过地址簿，存的是标签名）
+	var peerTagIds []uint
+	var abs []model.AddressBook
+	service.DB.Where("id = ?", peer.Id).Find(&abs)
+	for _, ab := range abs {
+		for _, tagName := range ab.Tags {
+			var tag model.Tag
+			service.DB.Where("name = ?", tagName).Limit(1).Find(&tag)
+			if tag.Id > 0 {
+				peerTagIds = append(peerTagIds, tag.Id)
+			}
 		}
-		tx.Order("priority desc").Find(&strategies)
-		if len(strategies) == 0 && user.Id > 0 {
-			// 没有分组策略则查用户自己的策略
-			service.DB.Where("status = 1 AND user_id = ?", user.Id).Order("priority desc").Find(&strategies)
+	}
+
+	// 按绑定类型优先级查找：user → group → tag → global
+	// 每种类型取数值优先级最高的第一个
+	bindOrder := []string{"user", "group", "tag", "global"}
+	for _, bindType := range bindOrder {
+		if foundStrategy != nil {
+			break
 		}
-		if len(strategies) > 0 {
-			s := strategies[0] // 取优先级最高的
-			// 将 ConfigItems (key=value 每行) 解析为 map
-			configMap := make(map[string]string)
-			for _, line := range strings.Split(s.ConfigItems, "\n") {
-				line = strings.TrimSpace(line)
-				if line == "" || strings.HasPrefix(line, "#") {
-					continue
+		for _, s := range allEnabled {
+			if s.BindType != bindType {
+				continue
+			}
+			match := false
+			switch bindType {
+			case "user":
+				// 用户绑定：设备所属用户匹配（不含别人分享的策略）
+				if peer.UserId > 0 && s.BindId == peer.UserId {
+					match = true
 				}
-				parts := strings.SplitN(line, "=", 2)
-				if len(parts) == 2 {
-					key := strings.TrimSpace(parts[0])
-					val := strings.TrimSpace(parts[1])
-					if key != "" {
-						configMap[key] = val
+			case "group":
+				// 设备分组绑定
+				if peer.GroupId > 0 && s.BindId == peer.GroupId {
+					match = true
+				}
+			case "tag":
+				// 标签绑定：设备的地址簿中有该标签
+				for _, tid := range peerTagIds {
+					if tid == s.BindId {
+						match = true
+						break
 					}
 				}
+			case "global":
+				// 全局绑定：适用于所有设备
+				match = true
 			}
-			if len(configMap) > 0 {
-				resp["strategy"] = model.StrategyOptions{ConfigOptions: configMap}
-				resp["modified_at"] = time.Now().Unix()
+			if match {
+				foundStrategy = &s
+				break
 			}
+		}
+	}
+
+	if foundStrategy != nil {
+		// 将 ConfigItems (key=value 每行) 解析为 map
+		configMap := make(map[string]string)
+		for _, line := range strings.Split(foundStrategy.ConfigItems, "\n") {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			parts := strings.SplitN(line, "=", 2)
+			if len(parts) == 2 {
+				key := strings.TrimSpace(parts[0])
+				val := strings.TrimSpace(parts[1])
+				if key != "" {
+					configMap[key] = val
+				}
+			}
+		}
+		if len(configMap) > 0 {
+			resp["strategy"] = model.StrategyOptions{ConfigOptions: configMap}
+			resp["modified_at"] = time.Now().Unix()
 		}
 	}
 
