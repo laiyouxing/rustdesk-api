@@ -132,8 +132,14 @@ func (s *AlertService) checkOfflineDevices() {
 			if hostname == "" {
 				hostname = peer.Id
 			}
+			alias := peer.Alias
+			if alias == "" {
+				alias = hostname
+			}
+			lastOnline := time.Unix(peer.LastOnlineTime, 0).Format("2006-01-02 15:04:05")
 			title := "设备离线告警"
-			content := fmt.Sprintf("设备 %s (ID: %s) 已离线超过 %d 分钟", hostname, peer.Id, cfg.OfflineMin)
+			content := fmt.Sprintf("设备：%s\n别名：%s\nID：%s\n离线时长：%d 分钟\n最后在线：%s",
+				hostname, alias, peer.Id, cfg.OfflineMin, lastOnline)
 
 			// 去重检查：上次通知时间距今是否超过一个检测周期(3min)
 			if cfg.LastNotifiedAt > now-180 {
