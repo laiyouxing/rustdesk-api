@@ -29,6 +29,7 @@ type Service struct {
 	*AlertService
 	*NotifyService
 	*ClientDownloadService
+	*StrategyService
 }
 
 type Dependencies struct {

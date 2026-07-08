@@ -7,6 +7,7 @@ import (
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"github.com/lejianwen/rustdesk-api/v2/service"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -59,7 +60,50 @@ func (i *Index) Heartbeat(c *gin.Context) {
 		upp := &model.Peer{RowId: peer.RowId, LastOnlineTime: time.Now().Unix(), LastOnlineIp: c.ClientIP()}
 		service.AllService.PeerService.Update(upp)
 	}
-	c.JSON(http.StatusOK, gin.H{})
+
+	resp := gin.H{}
+
+	// 查找用户和分组，获取关联的策略
+	user := service.AllService.UserService.FindById(peer.UserId)
+	if user != nil && user.Id > 0 {
+		// 查找策略：先查用户直接绑定的，再查分组绑定的
+		var strategies []model.Strategy
+		tx := service.DB.Where("status = 1")
+		if peer.GroupId > 0 {
+			// 优先查找分组关联的策略（按优先级降序）
+			tx = tx.Where("user_id = ?", peer.GroupId)
+		}
+		tx.Order("priority desc").Find(&strategies)
+		if len(strategies) == 0 && user.Id > 0 {
+			// 没有分组策略则查用户自己的策略
+			service.DB.Where("status = 1 AND user_id = ?", user.Id).Order("priority desc").Find(&strategies)
+		}
+		if len(strategies) > 0 {
+			s := strategies[0] // 取优先级最高的
+			// 将 ConfigItems (key=value 每行) 解析为 map
+			configMap := make(map[string]string)
+			for _, line := range strings.Split(s.ConfigItems, "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
+				parts := strings.SplitN(line, "=", 2)
+				if len(parts) == 2 {
+					key := strings.TrimSpace(parts[0])
+					val := strings.TrimSpace(parts[1])
+					if key != "" {
+						configMap[key] = val
+					}
+				}
+			}
+			if len(configMap) > 0 {
+				resp["strategy"] = model.StrategyOptions{ConfigOptions: configMap}
+				resp["modified_at"] = time.Now().Unix()
+			}
+		}
+	}
+
+	c.JSON(http.StatusOK, resp)
 }
 
 // Version 版本

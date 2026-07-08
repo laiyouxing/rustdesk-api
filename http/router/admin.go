@@ -46,6 +46,7 @@ func Init(g *gin.Engine) {
 	//deprecated end
 
 	ShareRecordBind(adg)
+	StrategyBind(adg)
 	VersionBind(adg)
 	ClientDownloadBind(adg)
 	MyBind(adg)
@@ -364,6 +365,17 @@ func ShareRecordBind(rg *gin.RouterGroup) {
 		aR.POST("/batchDelete", cont.BatchDelete)
 	}
 
+}
+
+func StrategyBind(rg *gin.RouterGroup) {
+	sR := rg.Group("/strategy").Use(middleware.AdminPrivilege())
+	{
+		cont := &admin.Strategy{}
+		sR.GET("/list", cont.List)
+		sR.POST("/create", cont.Create)
+		sR.POST("/update", cont.Update)
+		sR.POST("/delete", cont.Delete)
+	}
 }
 
 func VersionBind(rg *gin.RouterGroup) {
