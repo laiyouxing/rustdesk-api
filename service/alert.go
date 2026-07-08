@@ -10,10 +10,10 @@ type AlertService struct{}
 
 func (s *AlertService) StartChecker() {
 	AllService.AlertService = s
-	go func() {
+		go func() {
 		for {
 			s.checkOfflineDevices()
-			time.Sleep(3 * time.Minute)
+			time.Sleep(30 * time.Minute)
 		}
 	}()
 	Logger.Info("Alert checker started")
