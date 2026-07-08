@@ -118,6 +118,21 @@ func (s *AlertService) checkOfflineDevices() {
 
 		peerIds, monitorAll := s.getMonitoredPeerIds(&cfg)
 
+		// 如果该配置有过离线通知记录，检查是否有设备重新上线
+		// 有则重置 last_notified_at，下次离线可立即通知
+		if cfg.LastNotifiedAt > 0 {
+			var onlineCount int64
+			onlineQuery := DB.Model(&model.Peer{}).Where("last_online_time > ?", now-300)
+			if !monitorAll && len(peerIds) > 0 {
+				onlineQuery = onlineQuery.Where("id in (?)", peerIds)
+			}
+			onlineQuery.Count(&onlineCount)
+			if onlineCount > 0 {
+				DB.Model(&model.AlertConfig{}).Where("row_id = ?", cfg.RowId).Update("last_notified_at", 0)
+				cfg.LastNotifiedAt = 0
+			}
+		}
+
 		var offlinePeers []model.Peer
 		// 只查询最近1小时内离线且超过阈值的设备
 		oneHourAgo := now - 3600
