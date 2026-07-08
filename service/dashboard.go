@@ -24,7 +24,8 @@ func (s *DashboardService) Stats() *DashboardStats {
 	DB.Model(&model.Peer{}).Where("last_online_time <= ? OR last_online_time = 0", now-300).Count(&stats.OfflinePeers)
 	DB.Model(&model.User{}).Count(&stats.TotalUsers)
 
-	todayStart := time.Now().Truncate(24 * time.Hour).Unix()
+	nowTime := time.Now()
+	todayStart := time.Date(nowTime.Year(), nowTime.Month(), nowTime.Day(), 0, 0, 0, 0, nowTime.Location()).Unix()
 	DB.Model(&model.AuditConn{}).Where("action = 'new' and created_at > ?", todayStart).Count(&stats.TodayConnections)
 
 	return stats
@@ -40,7 +41,8 @@ func (s *DashboardService) UserStats(userId uint) *DashboardStats {
 	DB.Model(&model.Peer{}).Where("user_id = ? and (last_online_time <= ? OR last_online_time = 0)", userId, now-300).Count(&stats.OfflinePeers)
 	// 普通用户不显示总用户数
 	stats.TotalUsers = 0
-	todayStart := time.Now().Truncate(24 * time.Hour).Unix()
+	nowTime := time.Now()
+	todayStart := time.Date(nowTime.Year(), nowTime.Month(), nowTime.Day(), 0, 0, 0, 0, nowTime.Location()).Unix()
 	DB.Model(&model.AuditConn{}).Where("action = 'new' and created_at > ?", todayStart).Count(&stats.TodayConnections)
 
 	return stats
