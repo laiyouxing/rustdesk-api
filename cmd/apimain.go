@@ -312,6 +312,7 @@ func DatabaseAutoUpdate() {
 		&model.AlertTarget{},
 		&model.StationMessage{},
 		&model.ClientDownload{},
+		&model.Strategy{},
 	}
 	for _, m := range fallbackModels {
 		if err := db.AutoMigrate(m); err != nil {
@@ -389,6 +390,7 @@ func Migrate(version uint) {
 		&model.AlertTarget{},
 		&model.StationMessage{},
 		&model.ClientDownload{},
+		&model.Strategy{},
 	)
 	if err != nil {
 		global.Logger.Error("migrate err :=>", err)
