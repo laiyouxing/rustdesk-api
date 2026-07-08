@@ -1,10 +1,12 @@
 package admin
 
 import (
+	"encoding/json"
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/http/request/admin"
 	"github.com/lejianwen/rustdesk-api/v2/http/response"
+	"github.com/lejianwen/rustdesk-api/v2/model"
 	"github.com/lejianwen/rustdesk-api/v2/service"
 	"gorm.io/gorm"
 	"net/http"
@@ -121,7 +123,42 @@ func (ct *Peer) List(c *gin.Context) {
 			tx.Where("alias like ?", "%"+query.Alias+"%")
 		}
 	})
-	response.Success(c, res)
+	// Enrich with tags from address_book
+	type PeerEntry struct {
+		model.Peer
+		Tags []string `json:"tags"`
+	}
+	var enriched []*PeerEntry
+	if len(res.Peers) > 0 {
+		var peerIds []string
+		for _, p := range res.Peers {
+			if p.Id != "" {
+				peerIds = append(peerIds, p.Id)
+			}
+		}
+		tagMap := make(map[string][]string)
+		if len(peerIds) > 0 {
+			var abs []model.AddressBook
+			service.DB.Where("id in ?", peerIds).Find(&abs)
+			for _, ab := range abs {
+				var tags []string
+				if err := json.Unmarshal([]byte(ab.Tags), &tags); err == nil {
+					tagMap[ab.Id] = tags
+				}
+			}
+		}
+		for _, p := range res.Peers {
+			entry := &PeerEntry{Peer: *p}
+			entry.Tags = tagMap[p.Id]
+			if entry.Tags == nil {
+				entry.Tags = []string{}
+			}
+			enriched = append(enriched, entry)
+		}
+	} else {
+		enriched = []*PeerEntry{}
+	}
+	response.Success(c, gin.H{"list": enriched, "total": res.Total})
 }
 
 // Update 编辑
