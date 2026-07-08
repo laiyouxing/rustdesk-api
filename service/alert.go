@@ -7,6 +7,48 @@ import (
 	"time"
 )
 
+// peerNotifyRecord 每个 peer 的通知记录（用于 NotifiedPeers JSON 字段）
+type peerNotifyRecord struct {
+	Count    int   `json:"c"` // 当天通知次数
+	LastTime int64 `json:"t"` // 最后通知时间戳
+}
+
+// parseNotifiedPeers 兼容解析新旧两种格式的 NotifiedPeers
+func parseNotifiedPeers(data string) map[string]*peerNotifyRecord {
+	result := make(map[string]*peerNotifyRecord)
+	if data == "" {
+		return result
+	}
+	// 尝试新格式 map[string]*peerNotifyRecord
+	m := make(map[string]*peerNotifyRecord)
+	if err := json.Unmarshal([]byte(data), &m); err == nil {
+		for k, v := range m {
+			result[k] = v
+		}
+		return result
+	}
+	// 兼容旧格式 map[string]int64
+	old := make(map[string]int64)
+	if err := json.Unmarshal([]byte(data), &old); err == nil {
+		for k, v := range old {
+			result[k] = &peerNotifyRecord{Count: 1, LastTime: v}
+		}
+	}
+	return result
+}
+
+// isSameDay 判断两个时间戳是否在同一天（本地时间）
+func isSameDay(a, b int64) bool {
+	ta := time.Unix(a, 0)
+	tb := time.Unix(b, 0)
+	return ta.Year() == tb.Year() && ta.YearDay() == tb.YearDay()
+}
+
+const (
+	maxNotifyPerDay = 3   // 同一设备每天最多通知次数
+	notifyCooldown  = 600 // 单个 peer 最短通知间隔（秒），避免短时间内重复触发
+)
+
 type AlertService struct{}
 
 func (s *AlertService) StartChecker() {
@@ -135,7 +177,8 @@ func (s *AlertService) checkOfflineDevices() {
 		}
 
 		var offlinePeers []model.Peer
-		// 只查询最近1小时内离线且超过阈值的设备
+		// 查询离线设备：最近1小时内离线且超过阈值
+		// 策略2：连续3天以上离线的不再通知（已由 last_online_time > 1h 隐式覆盖）
 		oneHourAgo := now - 3600
 		query := DB.Where("last_online_time > ? AND last_online_time < ?", oneHourAgo, now-threshold)
 		if !monitorAll && len(peerIds) > 0 {
@@ -149,17 +192,22 @@ func (s *AlertService) checkOfflineDevices() {
 			continue
 		}
 
-		// 解析 NotifiedPeers：map[peerId]lastNotifiedAt
-		notifiedMap := make(map[string]int64)
-		if cfg.NotifiedPeers != "" {
-			json.Unmarshal([]byte(cfg.NotifiedPeers), &notifiedMap)
-		}
+		// 解析 NotifiedPeers
+		notifiedMap := parseNotifiedPeers(cfg.NotifiedPeers)
 
-		// 筛选出未在冷却期内通知过的 peer（冷却期1小时）
+		// 筛选出可以通知的 peer（排除已达到每天上限或冷却期内的）
 		var newOfflinePeers []model.Peer
 		for _, peer := range offlinePeers {
-			if lastNotify, ok := notifiedMap[peer.Id]; ok && now-lastNotify < 3600 {
-				continue // 该 peer 1小时内已通知过，跳过
+			rec, exists := notifiedMap[peer.Id]
+			if exists {
+				// 策略1：同一天已通知3次，当天不再通知
+				if isSameDay(rec.LastTime, now) && rec.Count >= maxNotifyPerDay {
+					continue
+				}
+				// 最短冷却间隔：10分钟内不重复通知同一设备
+				if now-rec.LastTime < notifyCooldown {
+					continue
+				}
 			}
 			newOfflinePeers = append(newOfflinePeers, peer)
 		}
@@ -192,8 +240,21 @@ func (s *AlertService) checkOfflineDevices() {
 				if stationCfg, ok := userStationCfg[cfg.UserId]; ok && stationCfg != nil {
 					AllService.NotifyService.SendStationMessage(cfg.UserId, title, content, peer.Id)
 				}
-				// 记录该 peer 的通知时间
-				notifiedMap[peer.Id] = now
+
+				// 更新该 peer 的通知记录
+				rec, exists := notifiedMap[peer.Id]
+				if exists && isSameDay(rec.LastTime, now) {
+					rec.Count++
+					rec.LastTime = now
+				} else {
+					notifiedMap[peer.Id] = &peerNotifyRecord{Count: 1, LastTime: now}
+				}
+			}
+			// 清理非今天的记录，避免 map 无限增长
+			for k, v := range notifiedMap {
+				if !isSameDay(v.LastTime, now) {
+					delete(notifiedMap, k)
+				}
 			}
 			// 持久化 NotifiedPeers
 			encoded, _ := json.Marshal(notifiedMap)
