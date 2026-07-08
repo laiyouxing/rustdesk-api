@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"strconv"
+
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/http/response"
 	"github.com/lejianwen/rustdesk-api/v2/model"
@@ -10,14 +12,38 @@ import (
 type AlertTargetCtl struct {
 }
 
+// checkAlertOwner verifies that the alert config with given id belongs to current user.
+func (c *AlertTargetCtl) checkAlertOwner(ctx *gin.Context, alertId uint) bool {
+	user, ok := ctx.Get("curUser")
+	if !ok {
+		return false
+	}
+	u, ok := user.(*model.User)
+	if !ok || u.Id == 0 {
+		return false
+	}
+	var cfg model.AlertConfig
+	service.DB.Where("row_id = ? AND user_id = ?", alertId, u.Id).First(&cfg)
+	return cfg.RowId > 0
+}
+
 func (c *AlertTargetCtl) List(ctx *gin.Context) {
-	alertId := ctx.Query("alert_id")
-	if alertId == "" {
+	alertIdStr := ctx.Query("alert_id")
+	if alertIdStr == "" {
 		response.Fail(ctx, 101, "alert_id required")
 		return
 	}
+	alertIdUint, err := strconv.ParseUint(alertIdStr, 10, 64)
+	if err != nil {
+		response.Fail(ctx, 101, "alert_id invalid")
+		return
+	}
+	if !c.checkAlertOwner(ctx, uint(alertIdUint)) {
+		response.Fail(ctx, 403, response.TranslateMsg(ctx, "NoAccess"))
+		return
+	}
 	var targets []model.AlertTarget
-	service.DB.Where("alert_id = ?", alertId).Find(&targets)
+	service.DB.Where("alert_id = ?", alertIdStr).Find(&targets)
 	response.Success(ctx, gin.H{"list": targets})
 }
 
@@ -36,6 +62,10 @@ func (c *AlertTargetCtl) Create(ctx *gin.Context) {
 		response.Fail(ctx, 101, "参数不完整")
 		return
 	}
+	if !c.checkAlertOwner(ctx, f.AlertId) {
+		response.Fail(ctx, 403, response.TranslateMsg(ctx, "NoAccess"))
+		return
+	}
 	t := &model.AlertTarget{
 		AlertId:    f.AlertId,
 		TargetType: f.TargetType,
@@ -50,6 +80,17 @@ func (c *AlertTargetCtl) Delete(ctx *gin.Context) {
 	form := &struct{ Id uint `json:"id"` }{}
 	if err := ctx.ShouldBindJSON(form); err != nil || form.Id == 0 {
 		response.Fail(ctx, 101, "ID不能为空")
+		return
+	}
+	// find the target first to check ownership
+	var target model.AlertTarget
+	service.DB.First(&target, form.Id)
+	if target.RowId == 0 {
+		response.Fail(ctx, 404, "目标不存在")
+		return
+	}
+	if !c.checkAlertOwner(ctx, target.AlertId) {
+		response.Fail(ctx, 403, response.TranslateMsg(ctx, "NoAccess"))
 		return
 	}
 	service.DB.Delete(&model.AlertTarget{}, form.Id)
