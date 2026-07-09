@@ -56,6 +56,12 @@ func (c *AlertConfig) Update(ctx *gin.Context) {
 	// Only allow updating own configs
 	if user, ok := ctx.Get("curUser"); ok {
 		if u, ok := user.(*model.User); ok {
+			// 密码为空表示不修改，保留原值
+			if f.SmtpPass == "" {
+				var old model.AlertConfig
+				service.DB.Where("row_id = ? AND user_id = ?", f.RowId, u.Id).First(&old)
+				f.SmtpPass = old.SmtpPass
+			}
 			service.DB.Model(&model.AlertConfig{}).Where("row_id = ? AND user_id = ?", f.RowId, u.Id).Updates(f)
 			response.Success(ctx, nil)
 			return
