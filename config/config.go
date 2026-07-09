@@ -31,18 +31,10 @@ type Admin struct {
 	IdServerPort    int    `mapstructure:"id-server-port"`
 	RelayServerPort int    `mapstructure:"relay-server-port"`
 }
-type Alert struct {
-	SmtpHost string `mapstructure:"smtp-host"`
-	SmtpPort int    `mapstructure:"smtp-port"`
-	SmtpUser string `mapstructure:"smtp-user"`
-	SmtpPass string `mapstructure:"smtp-pass"`
-}
-
 type Config struct {
 	Lang       string `mapstructure:"lang"`
 	App        App
 	Admin      Admin
-	Alert      Alert
 	Gorm       Gorm
 	Mysql      Mysql
 	Postgresql Postgresql
