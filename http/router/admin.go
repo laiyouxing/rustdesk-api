@@ -56,6 +56,7 @@ func Init(g *gin.Engine) {
 	StationMessageBind(adg)
 	RustdeskCmdBind(adg)
 	DeviceGroupBind(adg)
+	BackupBind(adg)
 	//访问静态文件
 	//g.StaticFS("/upload", http.Dir(global.Config.Gin.ResourcesPath+"/upload"))
 }
@@ -406,4 +407,11 @@ func ClientDownloadBind(rg *gin.RouterGroup) {
 		vR.POST("/delete", cont.Delete)
 		vR.POST("/setEnable", cont.SetEnable)
 	}
+}
+
+func BackupBind(adg *gin.RouterGroup) {
+	rg := adg.Group("/backup").Use(middleware.AdminPrivilege())
+	cont := &admin.BackupCtl{}
+	rg.GET("/config", cont.Config)
+	rg.GET("/database", cont.Database)
 }
