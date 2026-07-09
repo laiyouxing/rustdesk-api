@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"fmt"
+	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"io"
 	"net"
@@ -58,18 +59,20 @@ func (s *NotifyService) sendDingTalk(webhook, title, content string) {
 	s.postJson(webhook, body)
 }
 
-// sendSmtp 支持 465（SMTPS/TLS）和 587（STARTTLS）两种端口
+// sendSmtp 发件配置从全局 config.Alert 读取，收件人从用户配置读取
+// 支持 465（SMTPS/TLS）和 587（STARTTLS）两种端口
 func (s *NotifyService) sendSmtp(cfg *model.AlertConfig, title, content string) {
-	if cfg.SmtpHost == "" || cfg.SmtpTo == "" {
+	alertCfg := global.Config.Alert
+	if alertCfg.SmtpHost == "" || cfg.SmtpTo == "" {
 		return
 	}
-	addr := net.JoinHostPort(cfg.SmtpHost, fmt.Sprintf("%d", cfg.SmtpPort))
-	auth := smtp.PlainAuth("", cfg.SmtpUser, cfg.SmtpPass, cfg.SmtpHost)
+	addr := net.JoinHostPort(alertCfg.SmtpHost, fmt.Sprintf("%d", alertCfg.SmtpPort))
+	auth := smtp.PlainAuth("", alertCfg.SmtpUser, alertCfg.SmtpPass, alertCfg.SmtpHost)
 
 	// Build HTML email body
 	htmlContent := buildEmailHTML(title, content)
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: =?UTF-8?B?%s?=\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
-		cfg.SmtpUser, cfg.SmtpTo, base64Encode(title), htmlContent)
+		alertCfg.SmtpUser, cfg.SmtpTo, base64Encode(title), htmlContent)
 	recipients := strings.Split(cfg.SmtpTo, ",")
 	for i := range recipients {
 		recipients[i] = strings.TrimSpace(recipients[i])
@@ -83,7 +86,7 @@ func (s *NotifyService) sendSmtp(cfg *model.AlertConfig, title, content string) 
 			Logger.Warn("SMTP auth failed: ", err)
 			return
 		}
-		if err := client.Mail(cfg.SmtpUser); err != nil {
+		if err := client.Mail(alertCfg.SmtpUser); err != nil {
 			Logger.Warn("SMTP mail from failed: ", err)
 			return
 		}
@@ -105,14 +108,14 @@ func (s *NotifyService) sendSmtp(cfg *model.AlertConfig, title, content string) 
 		}
 	}
 
-	if cfg.SmtpPort == 587 {
+	if alertCfg.SmtpPort == 587 {
 		// STARTTLS: 先明文连接，再升级到 TLS
 		conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 		if err != nil {
 			Logger.Warn("SMTP dial failed: ", err)
 			return
 		}
-		client, err := smtp.NewClient(conn, cfg.SmtpHost)
+		client, err := smtp.NewClient(conn, alertCfg.SmtpHost)
 		if err != nil {
 			conn.Close()
 			Logger.Warn("SMTP new client failed: ", err)
@@ -133,7 +136,7 @@ func (s *NotifyService) sendSmtp(cfg *model.AlertConfig, title, content string) 
 			Logger.Warn("SMTP TLS dial failed: ", err)
 			return
 		}
-		client, err := smtp.NewClient(conn, cfg.SmtpHost)
+		client, err := smtp.NewClient(conn, alertCfg.SmtpHost)
 		if err != nil {
 			conn.Close()
 			Logger.Warn("SMTP new client failed: ", err)
