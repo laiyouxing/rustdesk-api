@@ -285,6 +285,38 @@ func DatabaseAutoUpdate() {
 		}
 	}
 
+	// 旧数据迁移：将旧 AlertConfig 中的通道信息迁移到 AlertChannel 表
+	if db.Migrator().HasColumn(&model.AlertConfig{}, "webhook_url") {
+		var oldCfgs []struct {
+			RowId      uint
+			UserId     uint
+			Channel    string
+			Name       string
+			WebhookUrl string `gorm:"column:webhook_url"`
+			SmtpHost   string `gorm:"column:smtp_host"`
+			SmtpPort   int    `gorm:"column:smtp_port"`
+			SmtpUser   string `gorm:"column:smtp_user"`
+			SmtpPass   string `gorm:"column:smtp_pass"`
+			SmtpTo     string `gorm:"column:smtp_to"`
+		}
+		db.Table("alert_configs").Where("channel_id = 0").Find(&oldCfgs)
+		for _, oc := range oldCfgs {
+			ch := &model.AlertChannel{
+				UserId:     oc.UserId,
+				Channel:    oc.Channel,
+				Name:       oc.Name,
+				WebhookUrl: oc.WebhookUrl,
+				SmtpHost:   oc.SmtpHost,
+				SmtpPort:   oc.SmtpPort,
+				SmtpUser:   oc.SmtpUser,
+				SmtpPass:   oc.SmtpPass,
+				SmtpTo:     oc.SmtpTo,
+			}
+			db.Create(ch)
+			db.Model(&model.AlertConfig{}).Where("row_id = ?", oc.RowId).Update("channel_id", ch.RowId)
+		}
+	}
+
 	// 兜底迁移：确保所有新表都存在。AutoMigrate 是幂等的，
 	// 已存在的表/列不会被改动。修复旧版本升级时因 version 记录
 	// 已是最新而跳过 Migrate，导致新增表（如 app_releases/station_messages）缺失的问题。
