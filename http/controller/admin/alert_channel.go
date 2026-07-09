@@ -5,7 +5,6 @@ import (
 	"github.com/lejianwen/rustdesk-api/v2/http/response"
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"github.com/lejianwen/rustdesk-api/v2/service"
-	"gorm.io/gorm"
 )
 
 type AlertChannel struct{}
