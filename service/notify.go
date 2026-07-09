@@ -38,13 +38,19 @@ func (s *NotifyService) SendStationMessage(receiverId uint, title, content, peer
 }
 
 func (s *NotifyService) SendByConfig(cfg *model.AlertConfig, title, content string) {
-	switch cfg.Channel {
+	// 从通道表获取具体配置
+	ch := &model.AlertChannel{}
+	DB.Where("row_id = ?", cfg.ChannelId).First(ch)
+	if ch.RowId == 0 {
+		return
+	}
+	switch ch.Channel {
 	case "wecom":
-		s.sendWecom(cfg.WebhookUrl, title, content)
+		s.sendWecom(ch.WebhookUrl, title, content)
 	case "dingtalk":
-		s.sendDingTalk(cfg.WebhookUrl, title, content)
+		s.sendDingTalk(ch.WebhookUrl, title, content)
 	case "smtp":
-		s.sendSmtp(cfg, title, content)
+		s.sendSmtpWithChannel(ch, title, content)
 	}
 }
 
@@ -58,19 +64,19 @@ func (s *NotifyService) sendDingTalk(webhook, title, content string) {
 	s.postJson(webhook, body)
 }
 
-// sendSmtp 支持 465（SMTPS/TLS）和 587（STARTTLS）两种端口
-func (s *NotifyService) sendSmtp(cfg *model.AlertConfig, title, content string) {
-	if cfg.SmtpHost == "" || cfg.SmtpTo == "" {
+// sendSmtpWithChannel 支持 465（SMTPS/TLS）和 587（STARTTLS）两种端口
+func (s *NotifyService) sendSmtpWithChannel(ch *model.AlertChannel, title, content string) {
+	if ch.SmtpHost == "" || ch.SmtpTo == "" {
 		return
 	}
-	addr := net.JoinHostPort(cfg.SmtpHost, fmt.Sprintf("%d", cfg.SmtpPort))
-	auth := smtp.PlainAuth("", cfg.SmtpUser, cfg.SmtpPass, cfg.SmtpHost)
+	addr := net.JoinHostPort(ch.SmtpHost, fmt.Sprintf("%d", ch.SmtpPort))
+	auth := smtp.PlainAuth("", ch.SmtpUser, ch.SmtpPass, ch.SmtpHost)
 
 	// Build HTML email body
 	htmlContent := buildEmailHTML(title, content)
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: =?UTF-8?B?%s?=\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
-		cfg.SmtpUser, cfg.SmtpTo, base64Encode(title), htmlContent)
-	recipients := strings.Split(cfg.SmtpTo, ",")
+		ch.SmtpUser, ch.SmtpTo, base64Encode(title), htmlContent)
+	recipients := strings.Split(ch.SmtpTo, ",")
 	for i := range recipients {
 		recipients[i] = strings.TrimSpace(recipients[i])
 	}
@@ -83,7 +89,7 @@ func (s *NotifyService) sendSmtp(cfg *model.AlertConfig, title, content string) 
 			Logger.Warn("SMTP auth failed: ", err)
 			return
 		}
-		if err := client.Mail(cfg.SmtpUser); err != nil {
+		if err := client.Mail(ch.SmtpUser); err != nil {
 			Logger.Warn("SMTP mail from failed: ", err)
 			return
 		}
@@ -105,14 +111,14 @@ func (s *NotifyService) sendSmtp(cfg *model.AlertConfig, title, content string) 
 		}
 	}
 
-	if cfg.SmtpPort == 587 {
+	if ch.SmtpPort == 587 {
 		// STARTTLS: 先明文连接，再升级到 TLS
 		conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 		if err != nil {
 			Logger.Warn("SMTP dial failed: ", err)
 			return
 		}
-		client, err := smtp.NewClient(conn, cfg.SmtpHost)
+		client, err := smtp.NewClient(conn, ch.SmtpHost)
 		if err != nil {
 			conn.Close()
 			Logger.Warn("SMTP new client failed: ", err)
@@ -133,7 +139,7 @@ func (s *NotifyService) sendSmtp(cfg *model.AlertConfig, title, content string) 
 			Logger.Warn("SMTP TLS dial failed: ", err)
 			return
 		}
-		client, err := smtp.NewClient(conn, cfg.SmtpHost)
+		client, err := smtp.NewClient(conn, ch.SmtpHost)
 		if err != nil {
 			conn.Close()
 			Logger.Warn("SMTP new client failed: ", err)

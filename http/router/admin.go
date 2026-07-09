@@ -52,6 +52,7 @@ func Init(g *gin.Engine) {
 	MyBind(adg)
 
 	DashboardBind(adg)
+	AlertChannelBind(adg)
 	AlertConfigBind(adg)
 	StationMessageBind(adg)
 	RustdeskCmdBind(adg)
@@ -66,6 +67,16 @@ func DashboardBind(adg *gin.RouterGroup) {
 	rg := adg.Group("/dashboard")
 	rg.GET("/", cont.Page)
 	rg.GET("/stats", cont.Stats)
+}
+
+func AlertChannelBind(adg *gin.RouterGroup) {
+	cont := &admin.AlertChannel{}
+	rg := adg.Group("/alert_channel")
+	rg.GET("/list", cont.List)
+	rg.GET("/all", cont.AllList)
+	rg.POST("/create", cont.Create)
+	rg.POST("/update", cont.Update)
+	rg.POST("/delete", cont.Delete)
 }
 
 func AlertConfigBind(adg *gin.RouterGroup) {

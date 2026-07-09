@@ -7,19 +7,12 @@ import (
 	"github.com/lejianwen/rustdesk-api/v2/service"
 )
 
-type AlertConfig struct {
-}
+type AlertConfig struct{}
 
 func (c *AlertConfig) List(ctx *gin.Context) {
 	var configs []model.AlertConfig
-	if user, ok := ctx.Get("curUser"); ok {
-		if u, ok := user.(*model.User); ok {
-			service.DB.Where("user_id = ?", u.Id).Find(&configs)
-			response.Success(ctx, gin.H{"list": configs})
-			return
-		}
-	}
-	service.DB.Find(&configs)
+	u := service.AllService.UserService.CurUser(ctx)
+	service.DB.Where("user_id = ?", u.Id).Find(&configs)
 	response.Success(ctx, gin.H{"list": configs})
 }
 
@@ -29,45 +22,43 @@ func (c *AlertConfig) Create(ctx *gin.Context) {
 		response.Fail(ctx, 101, "参数错误")
 		return
 	}
-	if f.Channel == "" {
-		response.Fail(ctx, 101, "请选择通道类型")
+	if f.ChannelId == 0 {
+		response.Fail(ctx, 101, "请选择通知通道")
 		return
 	}
-	// Save the creator's user ID for scoping
-	if user, ok := ctx.Get("curUser"); ok {
-		if u, ok := user.(*model.User); ok {
-			f.UserId = u.Id
-		}
+	u := service.AllService.UserService.CurUser(ctx)
+	f.UserId = u.Id
+	// 从通道获取 channel 类型
+	ch := &model.AlertChannel{}
+	service.DB.Where("row_id = ?", f.ChannelId).First(ch)
+	if ch.RowId == 0 {
+		response.Fail(ctx, 101, "通知通道不存在")
+		return
 	}
+	f.Channel = ch.Channel
+	f.Name = ch.Name
 	service.DB.Create(f)
-	response.Success(ctx, nil)
+	response.Success(ctx, f)
 }
 
 func (c *AlertConfig) Update(ctx *gin.Context) {
 	f := &model.AlertConfig{}
-	if err := ctx.ShouldBindJSON(f); err != nil {
+	if err := ctx.ShouldBindJSON(f); err != nil || f.RowId == 0 {
 		response.Fail(ctx, 101, "参数错误")
 		return
 	}
-	if f.RowId == 0 {
-		response.Fail(ctx, 101, "ID不能为空")
-		return
-	}
-	// Only allow updating own configs
-	if user, ok := ctx.Get("curUser"); ok {
-		if u, ok := user.(*model.User); ok {
-			// 密码为空表示不修改，保留原值
-			if f.SmtpPass == "" {
-				var old model.AlertConfig
-				service.DB.Where("row_id = ? AND user_id = ?", f.RowId, u.Id).First(&old)
-				f.SmtpPass = old.SmtpPass
-			}
-			service.DB.Model(&model.AlertConfig{}).Where("row_id = ? AND user_id = ?", f.RowId, u.Id).Updates(f)
-			response.Success(ctx, nil)
-			return
+	u := service.AllService.UserService.CurUser(ctx)
+	// 如果更新了 channel_id，同步更新 channel 名称
+	if f.ChannelId > 0 {
+		ch := &model.AlertChannel{}
+		service.DB.Where("row_id = ?", f.ChannelId).First(ch)
+		if ch.RowId > 0 {
+			f.Channel = ch.Channel
+			f.Name = ch.Name
 		}
 	}
-	response.Fail(ctx, 101, "无权限")
+	service.DB.Model(&model.AlertConfig{}).Where("row_id = ? AND user_id = ?", f.RowId, u.Id).Updates(f)
+	response.Success(ctx, nil)
 }
 
 func (c *AlertConfig) Delete(ctx *gin.Context) {
@@ -78,12 +69,7 @@ func (c *AlertConfig) Delete(ctx *gin.Context) {
 		response.Fail(ctx, 101, "ID不能为空")
 		return
 	}
-	if user, ok := ctx.Get("curUser"); ok {
-		if u, ok := user.(*model.User); ok {
-			service.DB.Where("row_id = ? AND user_id = ?", form.Id, u.Id).Delete(&model.AlertConfig{})
-			response.Success(ctx, nil)
-			return
-		}
-	}
-	response.Fail(ctx, 101, "无权限")
+	u := service.AllService.UserService.CurUser(ctx)
+	service.DB.Where("row_id = ? AND user_id = ?", form.Id, u.Id).Delete(&model.AlertConfig{})
+	response.Success(ctx, nil)
 }
