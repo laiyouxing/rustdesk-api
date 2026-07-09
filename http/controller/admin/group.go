@@ -34,7 +34,7 @@ func (ct *Group) Detail(c *gin.Context) {
 	response.Fail(c, 101, response.TranslateMsg(c, "ItemNotFound"))
 }
 
-// Create 创建群组
+// Create 创建群组（部门）
 // @Tags 群组
 // @Summary 创建群组
 // @Description 创建群组
@@ -57,6 +57,13 @@ func (ct *Group) Create(c *gin.Context) {
 		return
 	}
 	u := f.ToGroup()
+	if u.ParentId > 0 {
+		p := service.AllService.GroupService.InfoById(u.ParentId)
+		if p.Id == 0 {
+			response.Fail(c, 101, response.TranslateMsg(c, "ParentDeptNotFound"))
+			return
+		}
+	}
 	err := service.AllService.GroupService.Create(u)
 	if err != nil {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
@@ -114,6 +121,22 @@ func (ct *Group) Update(c *gin.Context) {
 		return
 	}
 	u := f.ToGroup()
+	// 防止将部门挂到自身或自己的子孙部门下，造成层级环
+	if u.ParentId > 0 {
+		if u.ParentId == u.Id {
+			response.Fail(c, 101, response.TranslateMsg(c, "DeptCycleError"))
+			return
+		}
+		p := service.AllService.GroupService.InfoById(u.ParentId)
+		if p.Id == 0 {
+			response.Fail(c, 101, response.TranslateMsg(c, "ParentDeptNotFound"))
+			return
+		}
+		if service.AllService.GroupService.IsDescendantOf(u.ParentId, u.Id) {
+			response.Fail(c, 101, response.TranslateMsg(c, "DeptCycleError"))
+			return
+		}
+	}
 	err := service.AllService.GroupService.Update(u)
 	if err != nil {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
@@ -152,8 +175,32 @@ func (ct *Group) Delete(c *gin.Context) {
 			response.Success(c, nil)
 			return
 		}
+		// 部门下有子部门或成员时禁止删除
+		if err.Error() == "DeptHasChildren" {
+			response.Fail(c, 101, response.TranslateMsg(c, "DeptHasChildren"))
+			return
+		}
+		if err.Error() == "DeptHasUsers" {
+			response.Fail(c, 101, response.TranslateMsg(c, "DeptHasUsers"))
+			return
+		}
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
 	}
 	response.Fail(c, 101, response.TranslateMsg(c, "ItemNotFound"))
+}
+
+// Tree 部门树（组织架构）
+// @Tags 群组
+// @Summary 部门树
+// @Description 返回嵌套的部门树，含成员数
+// @Accept  json
+// @Produce  json
+// @Success 200 {object} response.Response{data=[]model.GroupTree}
+// @Failure 500 {object} response.Response
+// @Router /admin/group/tree [get]
+// @Security token
+func (ct *Group) Tree(c *gin.Context) {
+	tree := service.AllService.GroupService.Tree()
+	response.Success(c, tree)
 }

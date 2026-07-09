@@ -158,3 +158,23 @@ other = "Banned."
 description = "Register success, wait admin confirm."
 one = "Register success, wait admin confirm."
 other = "Register success, wait admin confirm."
+
+[ParentDeptNotFound]
+description = "Parent department not found."
+one = "Parent department not found."
+other = "Parent department not found."
+
+[DeptCycleError]
+description = "Department hierarchy cycle detected."
+one = "Cannot select itself or its sub-department as the parent."
+other = "Cannot select itself or its sub-department as the parent."
+
+[DeptHasChildren]
+description = "Department has sub-departments."
+one = "Cannot delete a department that has sub-departments."
+other = "Cannot delete a department that has sub-departments."
+
+[DeptHasUsers]
+description = "Department has members."
+one = "Cannot delete a department that has members."
+other = "Cannot delete a department that has members."

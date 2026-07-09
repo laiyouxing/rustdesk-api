@@ -160,3 +160,23 @@ other = "已被封禁。"
 description = "Register success, wait for admin confirm."
 one = "注册成功，请等待管理员审核。"
 other = "注册成功，请等待管理员审核。"
+
+[ParentDeptNotFound]
+description = "上级部门不存在。"
+one = "上级部门不存在。"
+other = "上级部门不存在。"
+
+[DeptCycleError]
+description = "部门层级成环。"
+one = "不能选择自身或下级部门作为上级部门。"
+other = "不能选择自身或下级部门作为上级部门。"
+
+[DeptHasChildren]
+description = "部门存在子部门。"
+one = "该部门下存在子部门，无法删除。"
+other = "该部门下存在子部门，无法删除。"
+
+[DeptHasUsers]
+description = "部门存在成员。"
+one = "该部门下存在成员，无法删除。"
+other = "该部门下存在成员，无法删除。"

@@ -92,6 +92,12 @@ func (ct *User) List(c *gin.Context) {
 		if query.Username != "" {
 			tx.Where("username like ?", "%"+query.Username+"%")
 		}
+		// 按部门筛选时，包含其所有子部门下的用户
+		if query.GroupId > 0 {
+			ids := service.AllService.GroupService.DescendantIds(query.GroupId)
+			ids = append(ids, query.GroupId)
+			tx.Where("group_id in ?", ids)
+		}
 	})
 	response.Success(c, res)
 }

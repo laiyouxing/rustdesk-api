@@ -51,6 +51,7 @@ type PageQuery struct {
 type UserQuery struct {
 	PageQuery
 	Username string `form:"username"`
+	GroupId  uint   `form:"group_id"`
 }
 type UserPasswordForm struct {
 	Id       uint   `json:"id" validate:"required"`

@@ -154,6 +154,7 @@ func GroupBind(rg *gin.RouterGroup) {
 	{
 		cont := &admin.Group{}
 		aR.GET("/list", cont.List)
+		aR.GET("/tree", cont.Tree)
 		aR.GET("/detail/:id", cont.Detail)
 		aR.POST("/create", cont.Create)
 		aR.POST("/update", cont.Update)
