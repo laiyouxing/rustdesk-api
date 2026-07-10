@@ -10,75 +10,111 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/http/response"
+	"github.com/lejianwen/rustdesk-api/v2/model"
+	"github.com/lejianwen/rustdesk-api/v2/service"
 )
 
 type ServerStatus struct {
 }
 
-// Status 检查 hbbs/hbbr 端口连通性并查询 hbbr 负载/连接数，仅管理员可访问
+// Status 探测当前用户创建的所有服务器条目连通性，并返回 hbbr 负载(仅同机可用)
 // @Tags 系统
 // @Summary 服务器状态
-// @Description 通过 TCP 探测 hbbs(rendezvous) 与 hbbr(relay) 服务端口返回连通性与延迟；
-// 同时经 hbbr 回环命令接口(usage)查询中继连接数与负载(仅 api-server 与 hbbr 同机时可用)
+// @Description 对用户在页面中添加的服务器条目做 TCP 探测，返回连通性/延迟；同时尝试查询 hbbr 负载(可选)
 // @Produce  json
 // @Success 200 {object} response.Response
 // @Router /server_status [get]
 // @Security token
 func (ct *ServerStatus) Status(c *gin.Context) {
-	hbbs := probe(global.Config.Rustdesk.IdServer, global.Config.Admin.IdServerPort)
-	hbbr := probe(global.Config.Rustdesk.RelayServer, global.Config.Admin.RelayServerPort)
+	u := service.AllService.UserService.CurUser(c)
+	results := service.AllService.ServerStatusService.ProbeAll(u.Id)
 	response.Success(c, gin.H{
-		"hbbs":       hbbs,
-		"hbbr":       hbbr,
+		"list":       results,
 		"hbbr_stats": hbbrStats(),
 	})
 }
 
-// probe 通过 TCP 探测指定地址，返回状态/延迟/错误信息
-func probe(host string, defaultPort int) gin.H {
-	if host == "" {
-		return gin.H{
-			"host":       "",
-			"status":     "not_configured",
-			"latency_ms": 0,
-			"error":      "",
-		}
+// List 列出当前用户的服务器探测条目
+func (ct *ServerStatus) List(c *gin.Context) {
+	u := service.AllService.UserService.CurUser(c)
+	list := service.AllService.ServerStatusService.ListByUser(u.Id)
+	response.Success(c, gin.H{"list": list})
+}
+
+// Create 新建服务器探测条目
+func (ct *ServerStatus) Create(c *gin.Context) {
+	f := &model.ServerStatusMonitor{}
+	if err := c.ShouldBindJSON(f); err != nil || f.Host == "" || f.Name == "" {
+		response.Fail(c, 101, "参数错误：名称与主机地址必填")
+		return
 	}
-	addr := host
-	if !strings.Contains(host, ":") {
-		addr = net.JoinHostPort(host, strconv.Itoa(defaultPort))
+	if f.Protocol != "tcp" {
+		f.Protocol = "tcp"
 	}
-	start := time.Now()
-	conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
-	if err != nil {
-		return gin.H{
-			"host":       addr,
-			"status":     "down",
-			"latency_ms": 0,
-			"error":      err.Error(),
-		}
+	if f.Port < 0 || f.Port > 65535 {
+		f.Port = 0
 	}
-	defer conn.Close()
-	return gin.H{
-		"host":       addr,
-		"status":     "up",
-		"latency_ms": time.Since(start).Milliseconds(),
-		"error":      "",
+	if f.Enabled != 0 {
+		f.Enabled = 1
 	}
+	u := service.AllService.UserService.CurUser(c)
+	f.UserId = u.Id
+	if err := service.AllService.ServerStatusService.Create(f); err != nil {
+		response.Fail(c, 500, "保存失败："+err.Error())
+		return
+	}
+	response.Success(c, f)
+}
+
+// Update 更新服务器探测条目
+func (ct *ServerStatus) Update(c *gin.Context) {
+	f := &model.ServerStatusMonitor{}
+	if err := c.ShouldBindJSON(f); err != nil || f.RowId == 0 {
+		response.Fail(c, 101, "参数错误")
+		return
+	}
+	if f.Protocol != "tcp" {
+		f.Protocol = "tcp"
+	}
+	if f.Port < 0 || f.Port > 65535 {
+		f.Port = 0
+	}
+	if f.Enabled != 0 {
+		f.Enabled = 1
+	}
+	u := service.AllService.UserService.CurUser(c)
+	if err := service.AllService.ServerStatusService.Update(f, u.Id); err != nil {
+		response.Fail(c, 500, "保存失败："+err.Error())
+		return
+	}
+	response.Success(c, nil)
+}
+
+// Delete 删除服务器探测条目
+func (ct *ServerStatus) Delete(c *gin.Context) {
+	form := &struct {
+		Id uint `json:"id"`
+	}{}
+	if err := c.ShouldBindJSON(form); err != nil || form.Id == 0 {
+		response.Fail(c, 101, "ID不能为空")
+		return
+	}
+	u := service.AllService.UserService.CurUser(c)
+	service.AllService.ServerStatusService.Delete(form.Id, u.Id)
+	response.Success(c, nil)
 }
 
 // usageEntry 单条 hbbr 中继连接统计
 type usageEntry struct {
-	IP          string  `json:"ip"`
-	Seconds      int64   `json:"seconds"`
-	TrafficMB    float64 `json:"traffic_mb"`
-	HighestKbps  int64   `json:"highest_kbps"`
-	AvgKbps      int64   `json:"avg_kbps"`
-	SpeedKbps    int64   `json:"speed_kbps"`
+	IP         string  `json:"ip"`
+	Seconds    int64   `json:"seconds"`
+	TrafficMB  float64 `json:"traffic_mb"`
+	HighestKbps int64  `json:"highest_kbps"`
+	AvgKbps    int64   `json:"avg_kbps"`
+	SpeedKbps  int64   `json:"speed_kbps"`
 }
 
-// usageRe 匹配 hbbr `usage` 命令输出的每一行：
-// {ip}: {seconds}s {MB}MB {highest}kb/s {avg}kb/s {speed}kb/s
+// usageRe 匹配 hbbr `usage` 命令输出的每一行
 var usageRe = regexp.MustCompile(`: (\d+)s ([\d.]+)MB (\d+)kb/s (\d+)kb/s (\d+)kb/s$`)
 
 // hbbrStats 连接 hbbr 回环命令端口，发送 `u`(usage) 命令，解析中继连接数与负载。
@@ -167,12 +203,12 @@ func parseUsage(out string) []usageEntry {
 		avg, _ := strconv.ParseInt(m[4], 10, 64)
 		speed, _ := strconv.ParseInt(m[5], 10, 64)
 		entries = append(entries, usageEntry{
-			IP:         ip,
-			Seconds:    secs,
-			TrafficMB:  mb,
+			IP:          ip,
+			Seconds:     secs,
+			TrafficMB:   mb,
 			HighestKbps: highest,
-			AvgKbps:    avg,
-			SpeedKbps:  speed,
+			AvgKbps:     avg,
+			SpeedKbps:   speed,
 		})
 	}
 	return entries

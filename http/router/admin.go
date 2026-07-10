@@ -115,6 +115,10 @@ func ServerStatusBind(adg *gin.RouterGroup) {
 	cont := &admin.ServerStatus{}
 	rg := adg.Group("/server_status").Use(middleware.AdminPrivilege())
 	rg.GET("/", cont.Status)
+	rg.GET("/list", cont.List)
+	rg.POST("/create", cont.Create)
+	rg.POST("/update", cont.Update)
+	rg.POST("/delete", cont.Delete)
 }
 
 func RustdeskCmdBind(adg *gin.RouterGroup) {

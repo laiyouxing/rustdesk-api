@@ -31,6 +31,7 @@ type Service struct {
 	*ClientDownloadService
 	*StrategyService
 	*ProcessMonitorService
+	*ServerStatusService
 }
 
 type Dependencies struct {
