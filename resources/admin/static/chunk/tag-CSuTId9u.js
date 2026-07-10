@@ -1,0 +1,1 @@
+import{s as e}from"../entry/index-DPjq7ZXk.js";function u(t){return e({url:"/tag/list",params:t})}function o(t){return e({url:"/tag/create",method:"post",data:t})}function a(t){return e({url:"/tag/update",method:"post",data:t})}function n(t){return e({url:"/tag/delete",method:"post",data:t})}export{o as c,u as l,n as r,a as u};
