@@ -46,6 +46,8 @@ var rootCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		global.Logger.Info("API SERVER START")
 		http.ApiInit()
+		// 后台定时清理“进行中”的孤儿连接审计记录（旧客户端退出未发 close 等场景）
+		go service.AllService.AuditService.StartStaleConnCloseSweep()
 	},
 }
 

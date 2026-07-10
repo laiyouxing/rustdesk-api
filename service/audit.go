@@ -1,8 +1,10 @@
 package service
 
 import (
+	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"gorm.io/gorm"
+	"time"
 )
 
 type AuditService struct {
@@ -87,6 +89,42 @@ func (as *AuditService) UpdateAuditFile(u *model.AuditFile) error {
 
 func (as *AuditService) BatchDeleteAuditConn(ids []uint) error {
 	return DB.Where("id in (?)", ids).Delete(&model.AuditConn{}).Error
+}
+
+// StartStaleConnCloseSweep 后台定时清理“进行中”的孤儿连接审计记录。
+// 触发关闭的条件（满足其一即可）：
+//  1. 对端设备已离线超过 5 分钟（崩溃 / 网络中断 / 进程被杀死等场景）；
+//  2. 记录创建已超过 24 小时（兜底，覆盖控制端升级替换、未收到 close 事件的场景）。
+//
+// 避免旧客户端退出时未发送 close 审计，导致首页“最近连接记录”永久卡在“进行中”。
+// 该操作幂等，多实例部署也安全。
+func (as *AuditService) StartStaleConnCloseSweep() {
+	ticker := time.NewTicker(2 * time.Minute)
+	defer ticker.Stop()
+	as.closeStaleConns()
+	for range ticker.C {
+		as.closeStaleConns()
+	}
+}
+
+func (as *AuditService) closeStaleConns() {
+	now := time.Now()
+	offlineThreshold := now.Unix() - 300      // 对端离线超过 5 分钟
+	maxAgeThreshold := now.Add(-24 * time.Hour) // 记录超过 24 小时
+	sub := DB.Model(&model.Peer{}).
+		Select("peer_id").
+		Where("last_online_time <= ? OR last_online_time = 0", offlineThreshold)
+	res := DB.Model(&model.AuditConn{}).
+		Where("close_time = 0").
+		Where("(peer_id IN (?)) OR (created_at < ?)", sub, maxAgeThreshold).
+		Update("close_time", now.Unix())
+	if res.Error != nil {
+		global.Logger.Warn("closeStaleConns", res.Error)
+		return
+	}
+	if res.RowsAffected > 0 {
+		global.Logger.Infof("closeStaleConns: closed %d stale 'in-progress' audit_conn records", res.RowsAffected)
+	}
 }
 
 func (as *AuditService) BatchDeleteAuditFile(ids []uint) error {
