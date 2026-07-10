@@ -86,6 +86,13 @@ func (ct *Login) Login(c *gin.Context) {
 		return
 	}
 
+	// MFA 二次验证：已启用则下发临时令牌，前端进入动态码输入步骤
+	if u.MfaEnabled {
+		mfaToken := global.Jwt.GenerateMfaToken(u.Id)
+		response.SendResponse(c, 113, response.TranslateMsg(c, "MfaRequired"), gin.H{"mfa_token": mfaToken})
+		return
+	}
+
 	ut := service.AllService.UserService.Login(u, &model.LoginLog{
 		UserId:   u.Id,
 		Client:   model.LoginLogClientWebAdmin,
@@ -99,6 +106,59 @@ func (ct *Login) Login(c *gin.Context) {
 	loginLimiter.RemoveAttempts(clientIp)
 	responseLoginSuccess(c, u, ut.Token)
 }
+// MfaLogin MFA 二次验证后签发正式令牌
+// @Tags 登录
+// @Summary MFA 二次验证登录
+// @Description 使用登录时返回的 mfa_token 与动态码/恢复码换取正式登录令牌
+// @Accept  json
+// @Produce  json
+// @Param body body admin.MfaLogin true "MFA 验证信息"
+// @Success 200 {object} response.Response{data=adResp.LoginPayload}
+// @Failure 500 {object} response.Response
+// @Router /admin/login/mfa [post]
+func (ct *Login) MfaLogin(c *gin.Context) {
+	f := &admin.MfaLogin{}
+	if err := c.ShouldBindJSON(f); err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
+		return
+	}
+	errList := global.Validator.ValidStruct(c, f)
+	if len(errList) > 0 {
+		response.Fail(c, 101, errList[0])
+		return
+	}
+	uid, err := global.Jwt.ParseMfaToken(f.MfaToken)
+	if err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "MfaTokenInvalid"))
+		return
+	}
+	u := service.AllService.UserService.InfoById(uid)
+	if u.Id == 0 || !u.MfaEnabled {
+		response.Fail(c, 101, response.TranslateMsg(c, "MfaTokenInvalid"))
+		return
+	}
+	// 校验动态码或恢复码
+	ok := false
+	if f.RecoveryCode != "" {
+		ok = service.AllService.UserService.VerifyMfaRecovery(u, f.RecoveryCode)
+	} else {
+		ok = service.AllService.UserService.VerifyMfaCode(u, f.Code)
+	}
+	if !ok {
+		response.Fail(c, 101, response.TranslateMsg(c, "MfaCodeError"))
+		return
+	}
+	ut := service.AllService.UserService.Login(u, &model.LoginLog{
+		UserId:   u.Id,
+		Client:   model.LoginLogClientWebAdmin,
+		Uuid:     "", //must be empty
+		Ip:       c.ClientIP(),
+		Type:     model.LoginLogTypeAccount,
+		Platform: f.Platform,
+	})
+	responseLoginSuccess(c, u, ut.Token)
+}
+
 func (ct *Login) Captcha(c *gin.Context) {
 	loginLimiter := global.LoginLimiter
 	clientIp := c.ClientIP()

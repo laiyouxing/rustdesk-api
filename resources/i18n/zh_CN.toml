@@ -48,6 +48,41 @@ description = "System error."
 one = "系统错误。"
 other = "系统错误。"
 
+[MfaRequired]
+description = "MFA required."
+one = "需要进行多因素认证（MFA），请输入动态验证码。"
+other = "需要进行多因素认证（MFA），请输入动态验证码。"
+
+[MfaTokenInvalid]
+description = "MFA token invalid."
+one = "MFA 验证已失效，请重新登录。"
+other = "MFA 验证已失效，请重新登录。"
+
+[MfaCodeError]
+description = "MFA code error."
+one = "动态验证码错误，请重试。"
+other = "动态验证码错误，请重试。"
+
+[MfaSecretEmpty]
+description = "MFA secret empty."
+one = "请先获取 MFA 密钥。"
+other = "请先获取 MFA 密钥。"
+
+[PasswordError]
+description = "Password error."
+one = "密码错误。"
+other = "密码错误。"
+
+[MfaEnabled]
+description = "MFA enabled."
+one = "已启用多因素认证。"
+other = "已启用多因素认证。"
+
+[MfaDisabled]
+description = "MFA disabled."
+one = "已关闭多因素认证。"
+other = "已关闭多因素认证。"
+
 [ConfigNotFound]
 description = "Config not found."
 one = "配置不存在。"

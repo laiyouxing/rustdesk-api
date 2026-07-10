@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"encoding/base64"
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/http/request/admin"
@@ -9,6 +10,8 @@ import (
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"github.com/lejianwen/rustdesk-api/v2/service"
 	"github.com/lejianwen/rustdesk-api/v2/utils"
+	"github.com/pquerna/otp/totp"
+	"github.com/skip2/go-qrcode"
 	"gorm.io/gorm"
 	"strconv"
 )
@@ -297,6 +300,111 @@ func (ct *User) MyOauth(c *gin.Context) {
 		res = append(res, item)
 	}
 	response.Success(c, res)
+}
+
+// ===================== MFA (TOTP) =====================
+
+// MfaSetup 生成 TOTP 密钥与二维码，暂存密钥（尚未启用）
+// @Tags 用户
+// @Summary MFA 初始化
+// @Router /admin/user/mfa/setup [post]
+// @Security token
+func (ct *User) MfaSetup(c *gin.Context) {
+	u := service.AllService.UserService.CurUser(c)
+	key, err := totp.Generate(totp.GenerateOpts{
+		Issuer:      "RustDesk",
+		AccountName: u.Username,
+	})
+	if err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
+		return
+	}
+	if err := service.AllService.UserService.SetMfaSecret(u, key.Secret()); err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
+		return
+	}
+	qrPng, qerr := qrcode.Encode(key.URL(), qrcode.Medium, 256)
+	qr := ""
+	if qerr == nil {
+		qr = "data:image/png;base64," + base64.StdEncoding.EncodeToString(qrPng)
+	}
+	response.Success(c, gin.H{
+		"secret":      key.Secret(),
+		"otpauth_url": key.URL(),
+		"qr":          qr,
+	})
+}
+
+// MfaEnable 校验动态码后启用 MFA，返回一次性恢复码
+// @Tags 用户
+// @Summary MFA 启用
+// @Router /admin/user/mfa/enable [post]
+// @Security token
+func (ct *User) MfaEnable(c *gin.Context) {
+	f := &admin.MfaEnableForm{}
+	if err := c.ShouldBindJSON(f); err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
+		return
+	}
+	errList := global.Validator.ValidStruct(c, f)
+	if len(errList) > 0 {
+		response.Fail(c, 101, errList[0])
+		return
+	}
+	u := service.AllService.UserService.CurUser(c)
+	if u.MfaSecret == "" {
+		response.Fail(c, 101, response.TranslateMsg(c, "MfaSecretEmpty"))
+		return
+	}
+	if !service.AllService.UserService.VerifyMfaCode(u, f.Code) {
+		response.Fail(c, 101, response.TranslateMsg(c, "MfaCodeError"))
+		return
+	}
+	codes, err := service.AllService.UserService.EnableMfa(u)
+	if err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
+		return
+	}
+	response.Success(c, gin.H{"recovery_codes": codes})
+}
+
+// MfaDisable 校验登录密码后关闭 MFA
+// @Tags 用户
+// @Summary MFA 关闭
+// @Router /admin/user/mfa/disable [post]
+// @Security token
+func (ct *User) MfaDisable(c *gin.Context) {
+	f := &admin.MfaDisableForm{}
+	if err := c.ShouldBindJSON(f); err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
+		return
+	}
+	errList := global.Validator.ValidStruct(c, f)
+	if len(errList) > 0 {
+		response.Fail(c, 101, errList[0])
+		return
+	}
+	u := service.AllService.UserService.CurUser(c)
+	checked := service.AllService.UserService.InfoByUsernamePassword(u.Username, f.Password)
+	if checked.Id == 0 {
+		response.Fail(c, 101, response.TranslateMsg(c, "PasswordError"))
+		return
+	}
+	if err := service.AllService.UserService.DisableMfa(u); err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
+		return
+	}
+	response.Success(c, nil)
+}
+
+// MfaStatus 返回当前用户 MFA 启用状态
+// @Tags 用户
+// @Summary MFA 状态
+// @Router /admin/user/mfa/status [get]
+// @Security token
+func (ct *User) MfaStatus(c *gin.Context) {
+	u := service.AllService.UserService.CurUser(c)
+	response.Success(c, gin.H{"mfa_enabled": u.MfaEnabled})
 }
 
 // groupUsers

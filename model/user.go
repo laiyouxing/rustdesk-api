@@ -12,6 +12,10 @@ type User struct {
 	IsAdmin  *bool      `json:"is_admin" gorm:"default:0;not null;"`
 	Status   StatusCode `json:"status" gorm:"default:1;not null;"`
 	Remark   string     `json:"remark" gorm:"default:'';not null;"`
+	// MFA(TOTP) 相关字段：mfa_secret/mfa_recovery 不对外暴露
+	MfaEnabled  bool   `json:"mfa_enabled" gorm:"default:0;not null;"`
+	MfaSecret   string `json:"-" gorm:"default:'';not null;"`
+	MfaRecovery string `json:"-" gorm:"default:'';not null;"`
 	TimeModel
 }
 

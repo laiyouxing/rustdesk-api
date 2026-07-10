@@ -67,6 +67,16 @@ type GroupUsersQuery struct {
 	UserId uint `json:"user_id"`
 }
 
+// MfaEnableForm 启用 MFA 时校验动态码
+type MfaEnableForm struct {
+	Code string `json:"code" validate:"required" label:"动态码"`
+}
+
+// MfaDisableForm 关闭 MFA 时需验证登录密码
+type MfaDisableForm struct {
+	Password string `json:"password" validate:"required" label:"密码"`
+}
+
 type RegisterForm struct {
 	Username        string `json:"username" validate:"required,gte=2,lte=32"`
 	Email           string `json:"email"` // validate:"required,email"

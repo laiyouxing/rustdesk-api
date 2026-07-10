@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"github.com/lejianwen/rustdesk-api/v2/utils"
+	"github.com/pquerna/otp/totp"
 	"gorm.io/gorm"
 )
 
@@ -528,4 +529,69 @@ func (us *UserService) IsUsernameExistsLocal(username string) bool {
 
 func (us *UserService) IsEmailExistsLdap(email string) bool {
 	return AllService.LdapService.IsEmailExists(email)
+}
+
+// ===================== MFA (TOTP) =====================
+
+const MfaRecoveryCount = 8
+
+// GenerateMfaRecoveryCodes 生成一次性恢复码
+func (us *UserService) GenerateMfaRecoveryCodes() []string {
+	codes := make([]string, 0, MfaRecoveryCount)
+	for i := 0; i < MfaRecoveryCount; i++ {
+		codes = append(codes, utils.RandomString(10))
+	}
+	return codes
+}
+
+// SetMfaSecret 暂存 TOTP 密钥（尚未启用）
+func (us *UserService) SetMfaSecret(u *model.User, secret string) error {
+	u.MfaSecret = secret
+	return DB.Model(u).Update("mfa_secret", secret).Error
+}
+
+// EnableMfa 启用 MFA 并生成恢复码，返回恢复码列表
+func (us *UserService) EnableMfa(u *model.User) ([]string, error) {
+	codes := us.GenerateMfaRecoveryCodes()
+	u.MfaEnabled = true
+	u.MfaRecovery = strings.Join(codes, ",")
+	err := DB.Model(u).Updates(map[string]interface{}{
+		"mfa_enabled":  true,
+		"mfa_recovery": u.MfaRecovery,
+	}).Error
+	return codes, err
+}
+
+// DisableMfa 关闭 MFA 并清除密钥与恢复码
+func (us *UserService) DisableMfa(u *model.User) error {
+	u.MfaEnabled = false
+	u.MfaSecret = ""
+	u.MfaRecovery = ""
+	return DB.Model(u).Updates(map[string]interface{}{
+		"mfa_enabled":  false,
+		"mfa_secret":   "",
+		"mfa_recovery": "",
+	}).Error
+}
+
+// VerifyMfaCode 校验 TOTP 动态码
+func (us *UserService) VerifyMfaCode(u *model.User, code string) bool {
+	return totp.Validate(code, u.MfaSecret)
+}
+
+// VerifyMfaRecovery 校验恢复码并消费（一次性），成功返回 true
+func (us *UserService) VerifyMfaRecovery(u *model.User, code string) bool {
+	if u.MfaRecovery == "" {
+		return false
+	}
+	codes := strings.Split(u.MfaRecovery, ",")
+	for i, c := range codes {
+		if c != "" && c == code {
+			codes = append(codes[:i], codes[i+1:]...)
+			u.MfaRecovery = strings.Join(codes, ",")
+			DB.Model(u).Update("mfa_recovery", u.MfaRecovery)
+			return true
+		}
+	}
+	return false
 }

@@ -48,6 +48,41 @@ description = "System error."
 one = "System error."
 other = "System error."
 
+[MfaRequired]
+description = "MFA required."
+one = "Multi-factor authentication (MFA) required, please enter the verification code."
+other = "Multi-factor authentication (MFA) required, please enter the verification code."
+
+[MfaTokenInvalid]
+description = "MFA token invalid."
+one = "MFA verification expired, please log in again."
+other = "MFA verification expired, please log in again."
+
+[MfaCodeError]
+description = "MFA code error."
+one = "Invalid verification code, please try again."
+other = "Invalid verification code, please try again."
+
+[MfaSecretEmpty]
+description = "MFA secret empty."
+one = "Please generate the MFA secret first."
+other = "Please generate the MFA secret first."
+
+[PasswordError]
+description = "Password error."
+one = "Wrong password."
+other = "Wrong password."
+
+[MfaEnabled]
+description = "MFA enabled."
+one = "Multi-factor authentication enabled."
+other = "Multi-factor authentication enabled."
+
+[MfaDisabled]
+description = "MFA disabled."
+one = "Multi-factor authentication disabled."
+other = "Multi-factor authentication disabled."
+
 [ConfigNotFound]
 description = "Config not found."
 one = "Config not found."
