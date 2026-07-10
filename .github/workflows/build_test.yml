@@ -122,7 +122,7 @@ jobs:
         with:
           name: rustdesk-api-${{ matrix.job.goos }}-${{ matrix.job.platform }}
           path: |
-            ${{ matrix.job.goos}}-${{ matrix.job.platform }}.${{matrix.job.file_ext}}
+            release/
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -167,7 +167,7 @@ jobs:
       - name: Unzip binaries
         run: |
           mkdir -p ${{ matrix.job.platform }}
-          tar -xzf ${{ matrix.job.goos }}-${{ matrix.job.platform }}.tar.gz -C ${{ matrix.job.platform }}
+          cp -ar release ${{ matrix.job.platform }}/release
 
       - name: Build package for ${{ matrix.job.platform }} arch
         run: |
@@ -253,7 +253,7 @@ jobs:
       - name: Unzip binaries
         run: |
           mkdir -p ${{ matrix.job.platform }}
-          tar -xzf ${{ matrix.job.goos }}-${{ matrix.job.platform }}.tar.gz -C ${{ matrix.job.platform }}
+          cp -ar release ${{ matrix.job.platform }}/release
 
       - name: Build and push Docker image to Docker Hub ${{ matrix.job.platform }}
         if: ${{ env.SKIP_DOCKER_HUB == 'false' }}  # Only run this step if SKIP_DOCKER_HUB is false
