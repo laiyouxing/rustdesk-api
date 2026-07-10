@@ -79,6 +79,15 @@ func (c *AlertConfig) Delete(ctx *gin.Context) {
 		return
 	}
 	u := service.AllService.UserService.CurUser(ctx)
-	service.DB.Where("row_id = ? AND user_id = ?", form.Id, u.Id).Delete(&model.AlertConfig{})
+	// 先确认记录存在且属于当前用户
+	var cfg model.AlertConfig
+	service.DB.Where("row_id = ? AND user_id = ?", form.Id, u.Id).First(&cfg)
+	if cfg.RowId == 0 {
+		response.Fail(ctx, 101, "记录不存在")
+		return
+	}
+	// 级联删除监控目标，避免留下孤儿数据
+	service.DB.Where("alert_id = ?", cfg.RowId).Delete(&model.AlertTarget{})
+	service.DB.Delete(&cfg)
 	response.Success(ctx, nil)
 }
