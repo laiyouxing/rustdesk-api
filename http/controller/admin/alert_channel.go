@@ -17,7 +17,7 @@ func (ct *AlertChannel) List(c *gin.Context) {
 	var list []model.AlertChannel
 	query := service.DB.Model(&model.AlertChannel{}).Where("user_id = ?", u.Id)
 	query.Count(&total)
-	query.Order("id desc").Scopes(service.Paginate(page, pageSize)).Find(&list)
+	query.Order("row_id desc").Scopes(service.Paginate(page, pageSize)).Find(&list)
 	response.Success(c, gin.H{"list": list, "total": total})
 }
 
