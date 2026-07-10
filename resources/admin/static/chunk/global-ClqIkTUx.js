@@ -1,1 +1,0 @@
-import{o as a}from"../entry/index-qesxgdMf.js";import{r as e}from"./_@vue-DEM3y_BF.js";function c(){const s=e([]);return{allUsers:s,getAllUsers:async()=>{const t=await a({page_size:9999}).catch(r=>!1);t&&(s.value=t.data.list)}}}export{c as l};
