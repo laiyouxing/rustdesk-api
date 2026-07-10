@@ -30,6 +30,10 @@ type Admin struct {
 	HelloFile       string `mapstructure:"hello-file"`
 	IdServerPort    int    `mapstructure:"id-server-port"`
 	RelayServerPort int    `mapstructure:"relay-server-port"`
+	// RelayStatsHost 用于查询 hbbr 负载/连接数的回环地址。
+	// hbbr 仅接受来自本机(loopback)的命令连接，因此 api-server 必须与 hbbr 部署在同一主机，
+	// 且此处使用 127.0.0.1（或该主机的回环地址）。
+	RelayStatsHost string `mapstructure:"relay-stats-host"`
 }
 type Config struct {
 	Lang       string `mapstructure:"lang"`
@@ -55,6 +59,9 @@ func (a *Admin) Init() {
 	}
 	if a.RelayServerPort == 0 {
 		a.RelayServerPort = DefaultRelayServerPort
+	}
+	if a.RelayStatsHost == "" {
+		a.RelayStatsHost = "127.0.0.1"
 	}
 }
 
