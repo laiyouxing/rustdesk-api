@@ -319,6 +319,7 @@ func DatabaseAutoUpdate() {
 		&model.ClientDownload{},
 		&model.Strategy{},
 		&model.ProcessMonitorRule{},
+		&model.ProcessMonitorRulePeer{},
 		&model.ProcessMonitorStatus{},
 		&model.ServerStatusMonitor{},
 	}
@@ -401,6 +402,7 @@ func Migrate(version uint) {
 		&model.ClientDownload{},
 		&model.Strategy{},
 		&model.ProcessMonitorRule{},
+		&model.ProcessMonitorRulePeer{},
 		&model.ProcessMonitorStatus{},
 		&model.ServerStatusMonitor{},
 	)
