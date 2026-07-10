@@ -299,6 +299,10 @@ func ConfigBind(rg *gin.RouterGroup) {
 	aR.GET("/server", rs.ServerConfig)
 	aR.GET("/app", rs.AppConfig)
 
+	// 配置文件读写：仅管理员
+	aRf := aR.Group("/file").Use(middleware.AdminPrivilege())
+	aRf.GET("/get", rs.ConfigFileGet)
+	aRf.POST("/update", rs.ConfigFileUpdate)
 }
 
 /*
