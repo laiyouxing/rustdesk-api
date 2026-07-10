@@ -50,7 +50,8 @@ func (s *NotifyService) SendByConfig(cfg *model.AlertConfig, title, content stri
 	case "dingtalk":
 		s.sendDingTalk(ch.WebhookUrl, title, content)
 	case "smtp":
-		s.sendSmtpWithChannel(ch, title, content)
+		// 接收人来自告警规则（发送配置），而非通道
+		s.sendSmtpWithChannel(ch, cfg.Recipients, title, content)
 	}
 }
 
@@ -65,8 +66,9 @@ func (s *NotifyService) sendDingTalk(webhook, title, content string) {
 }
 
 // sendSmtpWithChannel 支持 465（SMTPS/TLS）和 587（STARTTLS）两种端口
-func (s *NotifyService) sendSmtpWithChannel(ch *model.AlertChannel, title, content string) {
-	if ch.SmtpHost == "" || ch.SmtpTo == "" {
+// recipients: 收件人邮箱列表（逗号分隔），来自告警规则的“接收人”配置
+func (s *NotifyService) sendSmtpWithChannel(ch *model.AlertChannel, recipientsStr, title, content string) {
+	if ch.SmtpHost == "" || recipientsStr == "" {
 		return
 	}
 	addr := net.JoinHostPort(ch.SmtpHost, fmt.Sprintf("%d", ch.SmtpPort))
@@ -75,8 +77,8 @@ func (s *NotifyService) sendSmtpWithChannel(ch *model.AlertChannel, title, conte
 	// Build HTML email body
 	htmlContent := buildEmailHTML(title, content)
 	msg := fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: =?UTF-8?B?%s?=\r\nContent-Type: text/html; charset=UTF-8\r\n\r\n%s",
-		ch.SmtpUser, ch.SmtpTo, base64Encode(title), htmlContent)
-	recipients := strings.Split(ch.SmtpTo, ",")
+		ch.SmtpUser, recipientsStr, base64Encode(title), htmlContent)
+	recipients := strings.Split(recipientsStr, ",")
 	for i := range recipients {
 		recipients[i] = strings.TrimSpace(recipients[i])
 	}

@@ -2,6 +2,7 @@ package admin
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/http/response"
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"github.com/lejianwen/rustdesk-api/v2/service"
@@ -32,7 +33,11 @@ func (ct *AlertChannel) Create(c *gin.Context) {
 		response.Fail(c, 101, "请输入通道名称")
 		return
 	}
-	service.DB.Create(f)
+	if err := service.DB.Create(f).Error; err != nil {
+		global.Logger.Error("AlertChannel Create failed: ", err)
+		response.Fail(c, 500, "保存失败："+err.Error())
+		return
+	}
 	response.Success(c, f)
 }
 
@@ -52,7 +57,11 @@ func (ct *AlertChannel) Update(c *gin.Context) {
 	if f.SmtpPass == "" {
 		f.SmtpPass = old.SmtpPass // 密码留空则不修改
 	}
-	service.DB.Model(old).Updates(f)
+	if err := service.DB.Model(old).Updates(f).Error; err != nil {
+		global.Logger.Error("AlertChannel Update failed: ", err)
+		response.Fail(c, 500, "保存失败："+err.Error())
+		return
+	}
 	response.Success(c, nil)
 }
 

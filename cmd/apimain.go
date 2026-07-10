@@ -312,10 +312,13 @@ func DatabaseAutoUpdate() {
 				SmtpPort:   oc.SmtpPort,
 				SmtpUser:   oc.SmtpUser,
 				SmtpPass:   oc.SmtpPass,
-				SmtpTo:     oc.SmtpTo,
 			}
 			db.Create(ch)
 			db.Model(&model.AlertConfig{}).Where("row_id = ?", oc.RowId).Update("channel_id", ch.RowId)
+			// 旧 alert_configs.smtp_to（接收人）迁移到新的 recipients 字段
+			if oc.SmtpTo != "" {
+				db.Model(&model.AlertConfig{}).Where("row_id = ?", oc.RowId).Update("recipients", oc.SmtpTo)
+			}
 		}
 	}
 

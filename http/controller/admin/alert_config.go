@@ -2,6 +2,7 @@ package admin
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/http/response"
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"github.com/lejianwen/rustdesk-api/v2/service"
@@ -37,7 +38,11 @@ func (c *AlertConfig) Create(ctx *gin.Context) {
 	}
 	f.Channel = ch.Channel
 	f.Name = ch.Name
-	service.DB.Create(f)
+	if err := service.DB.Create(f).Error; err != nil {
+		global.Logger.Error("AlertConfig Create failed: ", err)
+		response.Fail(ctx, 500, "保存失败："+err.Error())
+		return
+	}
 	response.Success(ctx, f)
 }
 
@@ -57,7 +62,11 @@ func (c *AlertConfig) Update(ctx *gin.Context) {
 			f.Name = ch.Name
 		}
 	}
-	service.DB.Model(&model.AlertConfig{}).Where("row_id = ? AND user_id = ?", f.RowId, u.Id).Updates(f)
+	if err := service.DB.Model(&model.AlertConfig{}).Where("row_id = ? AND user_id = ?", f.RowId, u.Id).Updates(f).Error; err != nil {
+		global.Logger.Error("AlertConfig Update failed: ", err)
+		response.Fail(ctx, 500, "保存失败："+err.Error())
+		return
+	}
 	response.Success(ctx, nil)
 }
 
