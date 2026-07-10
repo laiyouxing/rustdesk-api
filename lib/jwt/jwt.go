@@ -45,6 +45,11 @@ func (s *Jwt) GenerateToken(userId uint) string {
 
 func (s *Jwt) ParseToken(tokenString string) (uint, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &UserClaims{}, func(token *jwt.Token) (interface{}, error) {
+		// SECURITY: 显式校验签名算法，防止算法混淆攻击（algorithm confusion）。
+		// 若不校验，攻击者可把 alg 改为 "none" 或用 RSA 公钥伪装成 HMAC 密钥来伪造令牌。
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
 		return s.Key, nil
 	})
 	if err != nil {
@@ -83,6 +88,10 @@ func (s *Jwt) GenerateMfaToken(userId uint) string {
 // ParseMfaToken 解析 MFA 临时令牌
 func (s *Jwt) ParseMfaToken(tokenString string) (uint, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &MfaClaims{}, func(token *jwt.Token) (interface{}, error) {
+		// SECURITY: 同上，MFA 临时令牌同样需要校验签名算法，防止伪造。
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
 		return s.Key, nil
 	})
 	if err != nil {

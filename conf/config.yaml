@@ -62,6 +62,12 @@ proxy:
 jwt:
   key: ""
   expire-duration: 168h
+cors:
+  # 允许跨域访问的源白名单（YAML 列表）。仅命中列表的 Origin 才会被反射并返回凭据头。
+  # 例如：["https://admin.example.com", "https://app.example.com"]
+  # 留空（[]）表示关闭跨域：任何跨域请求都不会得到 Access-Control-Allow-Origin，浏览器将拦截响应。
+  # 注意：此处仅控制响应头，不会影响同源的管理后台/WebClient（同源请求不需要 CORS）。
+  allow-origins: []
 ldap:
   enable: false
   url: "ldap://ldap.example.com:389"

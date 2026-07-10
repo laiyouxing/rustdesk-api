@@ -35,6 +35,11 @@ type Admin struct {
 	// 且此处使用 127.0.0.1（或该主机的回环地址）。
 	RelayStatsHost string `mapstructure:"relay-stats-host"`
 }
+type Cors struct {
+	// AllowOrigins 允许跨域的源白名单（YAML 列表），例如 ["https://admin.example.com"]。
+	// 为空则关闭跨域（不返回 Access-Control-Allow-Origin）。详见 http/middleware/cors.go。
+	AllowOrigins []string `mapstructure:"allow-origins"`
+}
 type Config struct {
 	Lang       string `mapstructure:"lang"`
 	App        App
@@ -51,6 +56,7 @@ type Config struct {
 	Rustdesk   Rustdesk
 	Proxy      Proxy
 	Ldap       Ldap
+	Cors       Cors
 }
 
 func (a *Admin) Init() {

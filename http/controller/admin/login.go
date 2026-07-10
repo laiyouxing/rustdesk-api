@@ -123,9 +123,11 @@ func (ct *Login) MfaLogin(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
 		return
 	}
-	// 日志：收到的 MFA 请求（ShouldBindJSON 已消费 body，仅打印解析后的结构体）
-	global.Logger.Infof("[MFA] MfaLogin parsed={MfaToken=%q Code=%q RecoveryCode=%q Platform=%q}",
-		f.MfaToken, f.Code, f.RecoveryCode, f.Platform)
+	// 日志：收到的 MFA 请求。
+	// SECURITY: 绝不在日志中记录真实的动态码(Code)或恢复码(RecoveryCode)，
+	// 这些信息等价于一次性口令，落入日志文件即等同于泄露。仅记录“是否携带”，不记录值。
+	global.Logger.Infof("[MFA] MfaLogin parsed={MfaToken=%q HasCode=%t HasRecoveryCode=%t Platform=%q}",
+		f.MfaToken, f.Code != "", f.RecoveryCode != "", f.Platform)
 
 	errList := global.Validator.ValidStruct(c, f)
 	if len(errList) > 0 {
@@ -145,7 +147,8 @@ func (ct *Login) MfaLogin(c *gin.Context) {
 verify:
 	uid, err := global.Jwt.ParseMfaToken(f.MfaToken)
 	if err != nil {
-		global.Logger.Warnf("[MFA] MfaLogin: ParseMfaToken failed, mfa_token=%q err=%v", f.MfaToken, err)
+		// SECURITY: MFA 临时令牌短时效(5分钟)且敏感，日志中只记录长度，避免泄露可被重放的令牌。
+		global.Logger.Warnf("[MFA] MfaLogin: ParseMfaToken failed, mfa_token_len=%d err=%v", len(f.MfaToken), err)
 		response.Fail(c, 101, response.TranslateMsg(c, "MfaTokenInvalid"))
 		return
 	}

@@ -313,6 +313,11 @@ func ConfigBind(rg *gin.RouterGroup) {
 	aR := rg.Group("/config")
 	rs := &admin.Config{}
 
+	// 注意：/config/admin 必须在 BackendUserAuth() 之前注册，是有意为之——
+	// 登录页需要读取后台标题(title)做品牌展示，此时用户尚未登录。
+	// 该接口仅返回 title / hello（hello 来自服务端配置指定的文件，非用户输入），
+	// 不暴露数据库密码、OSS key、JWT key 等敏感配置，故保持公开。
+	// 若未来需要锁定，请同时确认前端登录页的标题获取方式，避免破坏登录流程。
 	aR.GET("/admin", rs.AdminConfig)
 
 	aR.Use(middleware.BackendUserAuth())

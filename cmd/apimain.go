@@ -444,7 +444,10 @@ func Migrate(version uint) {
 
 		// 生成随机密码
 		pwd := utils.RandomString(8)
-		global.Logger.Info("Admin Password Is: ", pwd)
+		// SECURITY: 初始 admin 密码属于高敏感凭据，绝不能写入文件日志（./runtime/log.txt），
+		// 否则任何能读取日志文件的人都能拿到管理员密码。这里仅一次性打印到 stderr（控制台，
+		// 不会持久化到日志文件），并提示操作员首次登录后立即修改。
+		fmt.Fprintf(os.Stderr, "\n[INIT] Generated initial admin password: %s\n[INIT] Please change it after first login!\n\n", pwd)
 		var err error
 		admin.Password, err = utils.EncryptPassword(pwd)
 		if err != nil {
