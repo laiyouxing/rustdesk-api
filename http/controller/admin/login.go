@@ -89,6 +89,7 @@ func (ct *Login) Login(c *gin.Context) {
 	// MFA 二次验证：已启用则下发临时令牌，前端进入动态码输入步骤
 	if u.MfaEnabled {
 		mfaToken := global.Jwt.GenerateMfaToken(u.Id)
+		global.Logger.Infof("[MFA] Login() uid=%d mfa_token_len=%d", u.Id, len(mfaToken))
 		response.SendResponse(c, 113, response.TranslateMsg(c, "MfaRequired"), gin.H{"mfa_token": mfaToken})
 		return
 	}
@@ -122,13 +123,29 @@ func (ct *Login) MfaLogin(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
 		return
 	}
+	// 日志：收到的 MFA 请求（ShouldBindJSON 已消费 body，仅打印解析后的结构体）
+	global.Logger.Infof("[MFA] MfaLogin parsed={MfaToken=%q Code=%q RecoveryCode=%q Platform=%q}",
+		f.MfaToken, f.Code, f.RecoveryCode, f.Platform)
+
 	errList := global.Validator.ValidStruct(c, f)
 	if len(errList) > 0 {
+		// 若 mfa_token 为空，尝试从 Header 兜底
+		if f.MfaToken == "" {
+			headerToken := c.GetHeader("X-Mfa-Token")
+			if headerToken != "" {
+				global.Logger.Infof("[MFA] MfaLogin: body mfa_token empty, fallback to X-Mfa-Token header")
+				f.MfaToken = headerToken
+				goto verify
+			}
+		}
+		global.Logger.Warnf("[MFA] MfaLogin: validation failed: %v", errList)
 		response.Fail(c, 101, errList[0])
 		return
 	}
+verify:
 	uid, err := global.Jwt.ParseMfaToken(f.MfaToken)
 	if err != nil {
+		global.Logger.Warnf("[MFA] MfaLogin: ParseMfaToken failed, mfa_token=%q err=%v", f.MfaToken, err)
 		response.Fail(c, 101, response.TranslateMsg(c, "MfaTokenInvalid"))
 		return
 	}
