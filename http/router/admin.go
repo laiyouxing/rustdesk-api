@@ -303,6 +303,9 @@ func ConfigBind(rg *gin.RouterGroup) {
 	aRf := aR.Group("/file").Use(middleware.AdminPrivilege())
 	aRf.GET("/get", rs.ConfigFileGet)
 	aRf.POST("/update", rs.ConfigFileUpdate)
+
+	// 重启服务：仅管理员
+	aR.POST("/restart", middleware.AdminPrivilege(), rs.ServiceRestart)
 }
 
 /*
