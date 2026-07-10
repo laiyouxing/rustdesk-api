@@ -460,7 +460,9 @@ func ProcessMonitorBind(adg *gin.RouterGroup) {
 	rg := adg.Group("/process_monitor").Use(middleware.AdminPrivilege())
 	rg.GET("/rules", cont.RuleList)
 	rg.POST("/rule/create", cont.RuleCreate)
+	rg.POST("/rule/batch_create", cont.RuleBatchCreate)
 	rg.POST("/rule/update", cont.RuleUpdate)
 	rg.POST("/rule/delete", cont.RuleDelete)
 	rg.GET("/status", cont.StatusList)
+	rg.GET("/peer_sources", cont.PeerSources)
 }
