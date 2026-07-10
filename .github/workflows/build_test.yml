@@ -39,6 +39,8 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     strategy:
       fail-fast: false
@@ -130,6 +132,7 @@ jobs:
           files: |
             ${{ matrix.job.goos}}-${{ matrix.job.platform }}.${{matrix.job.file_ext}}
           tag_name: test
+          allow_override: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -137,6 +140,8 @@ jobs:
     name: debian package - ${{ matrix.job.platform }}
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:
@@ -190,6 +195,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: test
+          allow_override: true
           files: |
             debian-build/rustdesk-api-server_*_${{ matrix.job.debian_platform }}.deb
 
