@@ -30,6 +30,7 @@ type Service struct {
 	*NotifyService
 	*ClientDownloadService
 	*StrategyService
+	*ProcessMonitorService
 }
 
 type Dependencies struct {

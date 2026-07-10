@@ -203,6 +203,7 @@ func InitGlobal() {
 
 	//service
 	service.New(&global.Config, global.DB, global.Logger, global.Jwt, global.Lock)
+	service.AllService.ProcessMonitorService = &service.ProcessMonitorService{}
 	service.AllService.AlertService.StartChecker()
 
 	global.LoginLimiter = utils.NewLoginLimiter(utils.SecurityPolicy{
@@ -351,6 +352,8 @@ func DatabaseAutoUpdate() {
 		&model.StationMessage{},
 		&model.ClientDownload{},
 		&model.Strategy{},
+		&model.ProcessMonitorRule{},
+		&model.ProcessMonitorStatus{},
 	}
 	for _, m := range fallbackModels {
 		if err := db.AutoMigrate(m); err != nil {
@@ -430,6 +433,8 @@ func Migrate(version uint) {
 		&model.StationMessage{},
 		&model.ClientDownload{},
 		&model.Strategy{},
+		&model.ProcessMonitorRule{},
+		&model.ProcessMonitorStatus{},
 	)
 	if err != nil {
 		global.Logger.Error("migrate err :=>", err)

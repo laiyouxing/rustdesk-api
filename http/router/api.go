@@ -115,6 +115,13 @@ func ApiInit(g *gin.Engine) {
 	}
 
 	PersonalRoutes(frg)
+
+	// 进程/端口监控：客户端上报状态 + 拉取下发配置（需 Bearer 鉴权）
+	{
+		p := &api.Process{}
+		frg.POST("/process/status", p.ProcessStatus)
+		frg.GET("/process/config", p.ProcessConfig)
+	}
 	//访问静态文件
 	g.StaticFS("/upload", http.Dir(global.Config.Gin.ResourcesPath+"/public/upload"))
 }

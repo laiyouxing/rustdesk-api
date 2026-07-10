@@ -59,6 +59,7 @@ func Init(g *gin.Engine) {
 	RustdeskCmdBind(adg)
 	DeviceGroupBind(adg)
 	BackupBind(adg)
+	ProcessMonitorBind(adg)
 	//访问静态文件
 	//g.StaticFS("/upload", http.Dir(global.Config.Gin.ResourcesPath+"/upload"))
 }
@@ -448,4 +449,14 @@ func BackupBind(adg *gin.RouterGroup) {
 	cont := &admin.BackupCtl{}
 	rg.GET("/config", cont.Config)
 	rg.GET("/database", cont.Database)
+}
+
+func ProcessMonitorBind(adg *gin.RouterGroup) {
+	cont := &admin.ProcessMonitor{}
+	rg := adg.Group("/process_monitor").Use(middleware.AdminPrivilege())
+	rg.GET("/rules", cont.RuleList)
+	rg.POST("/rule/create", cont.RuleCreate)
+	rg.POST("/rule/update", cont.RuleUpdate)
+	rg.POST("/rule/delete", cont.RuleDelete)
+	rg.GET("/status", cont.StatusList)
 }
