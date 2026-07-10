@@ -407,6 +407,34 @@ func (ct *User) MfaStatus(c *gin.Context) {
 	response.Success(c, gin.H{"mfa_enabled": u.MfaEnabled})
 }
 
+// MfaReset 管理员强制关闭指定用户的 MFA（用户丢失验证器/恢复码时的救援手段）
+// @Tags 用户
+// @Summary 管理员重置用户 MFA
+// @Router /admin/user/mfa/reset [post]
+// @Security token
+func (ct *User) MfaReset(c *gin.Context) {
+	f := &admin.MfaResetForm{}
+	if err := c.ShouldBindJSON(f); err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
+		return
+	}
+	errList := global.Validator.ValidStruct(c, f)
+	if len(errList) > 0 {
+		response.Fail(c, 101, errList[0])
+		return
+	}
+	u := service.AllService.UserService.InfoById(f.UserId)
+	if u.Id == 0 {
+		response.Fail(c, 101, response.TranslateMsg(c, "ItemNotFound"))
+		return
+	}
+	if err := service.AllService.UserService.DisableMfa(u); err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
+		return
+	}
+	response.Success(c, nil)
+}
+
 // groupUsers
 func (ct *User) GroupUsers(c *gin.Context) {
 	aG := service.AllService.GroupService.List(1, 999, nil)

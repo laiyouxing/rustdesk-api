@@ -77,6 +77,11 @@ type MfaDisableForm struct {
 	Password string `json:"password" validate:"required" label:"密码"`
 }
 
+// MfaResetForm 管理员强制重置用户 MFA
+type MfaResetForm struct {
+	UserId uint `json:"user_id" validate:"required" label:"用户ID"`
+}
+
 type RegisterForm struct {
 	Username        string `json:"username" validate:"required,gte=2,lte=32"`
 	Email           string `json:"email"` // validate:"required,email"

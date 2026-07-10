@@ -49,6 +49,7 @@ func Init(g *gin.Engine) {
 	StrategyBind(adg)
 	VersionBind(adg)
 	ClientDownloadBind(adg)
+	ServerStatusBind(adg)
 	MyBind(adg)
 
 	DashboardBind(adg)
@@ -109,6 +110,12 @@ func StationMessageBind(adg *gin.RouterGroup) {
 	rg.POST("/cleanup", middleware.AdminPrivilege(), cont.Cleanup)
 }
 
+func ServerStatusBind(adg *gin.RouterGroup) {
+	cont := &admin.ServerStatus{}
+	rg := adg.Group("/server_status").Use(middleware.AdminPrivilege())
+	rg.GET("/", cont.Status)
+}
+
 func RustdeskCmdBind(adg *gin.RouterGroup) {
 	cont := &admin.Rustdesk{}
 	rg := adg.Group("/rustdesk")
@@ -152,6 +159,8 @@ func UserBind(rg *gin.RouterGroup) {
 		aRP.POST("/update", cont.Update)
 		aRP.POST("/delete", cont.Delete)
 		aRP.POST("/changePwd", cont.UpdatePassword)
+		// 管理员强制重置用户 MFA（救援）
+		aRP.POST("/mfa/reset", cont.MfaReset)
 	}
 }
 
