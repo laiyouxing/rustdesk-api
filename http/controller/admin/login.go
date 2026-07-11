@@ -24,7 +24,7 @@ type Login struct {
 // @Accept  json
 // @Produce  json
 // @Param body body admin.Login true "登录信息"
-// @Success 200 {object} response.Response{data=adResp.LoginPayload}
+// @Success 200 {object} response.Response{data=admin.LoginPayload}
 // @Failure 500 {object} response.Response
 // @Router /admin/login [post]
 // @Security token
@@ -114,7 +114,7 @@ func (ct *Login) Login(c *gin.Context) {
 // @Accept  json
 // @Produce  json
 // @Param body body admin.MfaLogin true "MFA 验证信息"
-// @Success 200 {object} response.Response{data=adResp.LoginPayload}
+// @Success 200 {object} response.Response{data=admin.LoginPayload}
 // @Failure 500 {object} response.Response
 // @Router /admin/login/mfa [post]
 func (ct *Login) MfaLogin(c *gin.Context) {
@@ -301,7 +301,7 @@ func (ct *Login) OidcAuth(c *gin.Context) {
 // @Description OidcAuthQuery
 // @Accept  json
 // @Produce  json
-// @Success 200 {object} response.Response{data=adResp.LoginPayload}
+// @Success 200 {object} response.Response{data=admin.LoginPayload}
 // @Failure 500 {object} response.Response
 // @Router /admin/oidc/auth-query [get]
 func (ct *Login) OidcAuthQuery(c *gin.Context) {

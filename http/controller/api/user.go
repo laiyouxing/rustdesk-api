@@ -16,7 +16,7 @@ type User struct {
 // @Description 用户信息
 // @Accept  json
 // @Produce  json
-// @Success 200 {object} apiResp.UserPayload
+// @Success 200 {object} api.UserPayload
 // @Failure 500 {object} response.Response
 // @Router /currentUser [get]
 // @Security token
@@ -32,7 +32,7 @@ type User struct {
 // @Description 用户信息
 // @Accept  json
 // @Produce  json
-// @Success 200 {object} apiResp.UserPayload
+// @Success 200 {object} api.UserPayload
 // @Failure 500 {object} response.Response
 // @Router /currentUser [get]
 // @Security token

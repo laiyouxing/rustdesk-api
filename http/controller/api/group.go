@@ -23,7 +23,7 @@ type Group struct {
 // @Param pageSize query int false "每页数量"
 // @Param status query int false "状态"
 // @Param accessible query string false "accessible"
-// @Success 200 {object} response.DataResponse{data=[]apiResp.UserPayload}
+// @Success 200 {object} response.DataResponse{data=[]api.UserPayload}
 // @Failure 500 {object} response.ErrorResponse
 // @Router /users [get]
 // @Security BearerAuth
