@@ -7,6 +7,7 @@ type LoginLog struct {
 	DeviceId    string `json:"device_id"`
 	Uuid        string `json:"uuid"`
 	Ip          string `json:"ip"`
+	UserAgent   string `json:"user_agent" gorm:"default:'';not null;"`
 	Type        string `json:"type"`     //account,oauth
 	Platform    string `json:"platform"` //windows,linux,mac,android,ios
 	UserTokenId uint   `json:"user_token_id" gorm:"default:0;not null;"`

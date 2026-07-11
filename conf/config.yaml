@@ -8,7 +8,7 @@ app:
   ban-window-minutes: 15 # 连续登录失败计数的滑动窗口(分钟)，默认15；窗口外的旧失败记录会被自动清理
   ban-duration-minutes: 30 # 触发封禁后该 IP 被禁止登录的时长(分钟)，默认30
   show-swagger: 0 # 1:启用 0:禁用
-  token-expire: 168h
+  token-expire: 2h # web 后台不自动续期，到期需重新登录；客户端(rustauth)滑动续期不受影响
   web-sso: true #web auth sso
   disable-pwd-login: false #禁用密码登录
 

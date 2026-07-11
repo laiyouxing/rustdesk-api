@@ -64,9 +64,9 @@ func (co *Config) AppConfig(c *gin.Context) {
 func (co *Config) AdminConfig(c *gin.Context) {
 
 	u := &model.User{}
-	token := c.GetHeader("api-token")
+	token, _ := c.Cookie("access_token")
 	if token != "" {
-		u, _ = service.AllService.UserService.InfoByAccessToken(token)
+		u, _ = service.AllService.UserService.InfoByAccessToken(token, "")
 		if !service.AllService.UserService.CheckUserEnable(u) {
 			u.Id = 0
 		}

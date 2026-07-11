@@ -2,7 +2,9 @@ package admin
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/global"
@@ -100,13 +102,14 @@ func (ct *Login) Login(c *gin.Context) {
 		Client:   model.LoginLogClientWebAdmin,
 		Uuid:     "", //must be empty
 		Ip:       clientIp,
+		UserAgent: c.GetHeader("User-Agent"),
 		Type:     model.LoginLogTypeAccount,
 		Platform: f.Platform,
 	})
 
 	// 登录成功，清除登录限制
 	loginLimiter.RemoveAttempts(clientIp)
-	responseLoginSuccess(c, u, ut.Token)
+	responseLoginSuccess(c, u, ut)
 }
 // MfaLogin MFA 二次验证后签发正式令牌
 // @Tags 登录
@@ -179,10 +182,11 @@ func (ct *Login) MfaLogin(c *gin.Context) {
 		Client:   model.LoginLogClientWebAdmin,
 		Uuid:     "", //must be empty
 		Ip:       c.ClientIP(),
+		UserAgent: c.GetHeader("User-Agent"),
 		Type:     model.LoginLogTypeAccount,
 		Platform: f.Platform,
 	})
-	responseLoginSuccess(c, u, ut.Token)
+	responseLoginSuccess(c, u, ut)
 }
 
 func (ct *Login) Captcha(c *gin.Context) {
@@ -225,11 +229,16 @@ func (ct *Login) Captcha(c *gin.Context) {
 // @Failure 500 {object} response.Response
 // @Router /admin/logout [post]
 func (ct *Login) Logout(c *gin.Context) {
-	u := service.AllService.UserService.CurUser(c)
-	token, ok := c.Get("token")
-	if ok {
-		service.AllService.UserService.Logout(u, token.(string))
+	// 从 HttpOnly Cookie 读取 token（前端 JS 无法读取/删除该 Cookie，只能由后端清除）
+	token, err := c.Cookie("access_token")
+	if err == nil && token != "" {
+		// 传空 fingerprint 跳过来源校验，确保即使来源变化也能正常登出并清理记录
+		u, _ := service.AllService.UserService.InfoByAccessToken(token, "")
+		if u != nil && u.Id != 0 {
+			service.AllService.UserService.Logout(u, token)
+		}
 	}
+	clearAuthCookie(c)
 	response.Success(c, nil)
 }
 
@@ -316,13 +325,35 @@ func (ct *Login) OidcAuthQuery(c *gin.Context) {
 	if ut == nil {
 		return
 	}
-	responseLoginSuccess(c, u, ut.Token)
+	responseLoginSuccess(c, u, ut)
 }
 
-func responseLoginSuccess(c *gin.Context, u *model.User, token string) {
+// setAuthCookie 设置会话 Cookie：HttpOnly 防止 XSS 读取，SameSite=Lax 缓解 CSRF。
+// Secure 仅在 HTTPS（直接 TLS 或反向代理 X-Forwarded-Proto: https）时启用，
+// 避免本地明文 HTTP 开发环境下浏览器拒收 Cookie。
+func setAuthCookie(c *gin.Context, token string, maxAge int) {
+	secure := false
+	if c.Request.TLS != nil {
+		secure = true
+	} else if hp := c.GetHeader("X-Forwarded-Proto"); strings.EqualFold(hp, "https") {
+		secure = true
+	}
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie("access_token", token, maxAge, "/", "", secure, true)
+}
+
+// clearAuthCookie 清除会话 Cookie（登出或登录失效时调用）。
+func clearAuthCookie(c *gin.Context) {
+	c.SetSameSite(http.SameSiteLaxMode)
+	c.SetCookie("access_token", "", -1, "/", "", false, true)
+}
+
+func responseLoginSuccess(c *gin.Context, u *model.User, ut *model.UserToken) {
+	// token 仅通过 HttpOnly Cookie 下发，不再返回给前端 JS，从根本上消除 XSS 盗取风险。
+	setAuthCookie(c, ut.Token, int(ut.ExpiredAt-time.Now().Unix()))
 	lp := &adResp.LoginPayload{}
 	lp.FromUser(u)
-	lp.Token = token
+	lp.Token = "" // 不再向前端暴露 token
 	lp.RouteNames = service.AllService.UserService.RouteNames(u)
 	response.Success(c, lp)
 }

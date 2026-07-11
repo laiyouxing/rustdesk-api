@@ -102,6 +102,7 @@ func (o *Oauth) OidcAuthQueryPre(c *gin.Context) (*model.User, *model.UserToken)
 		DeviceId: v.Id,
 		Uuid:     v.Uuid,
 		Ip:       c.ClientIP(),
+		UserAgent: c.GetHeader("User-Agent"),
 		Type:     model.LoginLogTypeOauth,
 		Platform: v.DeviceOs,
 	})

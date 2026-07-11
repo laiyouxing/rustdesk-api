@@ -223,9 +223,11 @@ func (ct *User) UpdatePassword(c *gin.Context) {
 // @Security token
 func (ct *User) Current(c *gin.Context) {
 	u := service.AllService.UserService.CurUser(c)
-	token, _ := c.Get("token")
-	t := token.(string)
-	responseLoginSuccess(c, u, t)
+	lp := &adResp.LoginPayload{}
+	lp.FromUser(u)
+	lp.Token = "" // 不向前端暴露 token（已通过 HttpOnly Cookie 下发）
+	lp.RouteNames = service.AllService.UserService.RouteNames(u)
+	response.Success(c, lp)
 }
 
 // ChangeCurPwd 修改当前用户密码
@@ -483,7 +485,8 @@ func (ct *User) Register(c *gin.Context) {
 		Client: model.LoginLogClientWebAdmin,
 		Uuid:   "",
 		Ip:     c.ClientIP(),
+		UserAgent: c.GetHeader("User-Agent"),
 		Type:   model.LoginLogTypeAccount,
 	})
-	responseLoginSuccess(c, u, ut.Token)
+	responseLoginSuccess(c, u, ut)
 }

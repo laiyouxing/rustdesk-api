@@ -36,7 +36,7 @@ func RustAuth() gin.HandlerFunc {
 			// JWT 验证失败降级到数据库 token 查找（兼容老客户端）
 		}
 
-		user, ut := service.AllService.UserService.InfoByAccessToken(token)
+		user, ut := service.AllService.UserService.InfoByAccessToken(token, "")
 		if user.Id == 0 {
 			c.JSON(401, gin.H{
 				"error": "Unauthorized",

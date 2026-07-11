@@ -73,7 +73,9 @@ func (us *UserService) InfoByUsernamePassword(username, password string) *model.
 }
 
 // InfoByAccesstoken 根据accesstoken取用户信息
-func (us *UserService) InfoByAccessToken(token string) (*model.User, *model.UserToken) {
+// fingerprint 为调用方计算出的来源指纹（IP+User-Agent 哈希）；传空字符串表示跳过校验
+// （用于客户端 rustauth 及公开接口，这些场景不绑定来源）。
+func (us *UserService) InfoByAccessToken(token string, fingerprint string) (*model.User, *model.UserToken) {
 	u := &model.User{}
 	ut := &model.UserToken{}
 	DB.Where("token = ?", token).First(ut)
@@ -81,6 +83,11 @@ func (us *UserService) InfoByAccessToken(token string) (*model.User, *model.User
 		return u, ut
 	}
 	if ut.ExpiredAt < time.Now().Unix() {
+		return u, ut
+	}
+	// 来源指纹校验：当调用方提供了指纹且记录中也存在指纹时，必须一致，
+	// 否则视为 token 被异地/异设备盗用，拒绝放行（需重新登录）。
+	if fingerprint != "" && ut.Fingerprint != "" && fingerprint != ut.Fingerprint {
 		return u, ut
 	}
 	DB.Where("id = ?", ut.UserId).First(u)
@@ -98,12 +105,15 @@ func (us *UserService) GenerateToken(u *model.User) string {
 // Login 登录
 func (us *UserService) Login(u *model.User, llog *model.LoginLog) *model.UserToken {
 	token := us.GenerateToken(u)
+	// 计算来源指纹（IP + User-Agent），用于后续校验请求来源，防止 token 被盗用。
+	fp := utils.Md5(llog.Ip + "|" + llog.UserAgent)
 	ut := &model.UserToken{
 		UserId:     u.Id,
 		Token:      token,
 		DeviceUuid: llog.Uuid,
 		DeviceId:   llog.DeviceId,
 		ExpiredAt:  us.UserTokenExpireTimestamp(),
+		Fingerprint: fp,
 	}
 	DB.Create(ut)
 	llog.UserTokenId = ut.UserId
@@ -492,8 +502,9 @@ func (us *UserService) getAdminUserCount() int64 {
 func (us *UserService) UserTokenExpireTimestamp() int64 {
 	exp := Config.App.TokenExpire
 	if exp == 0 {
-		//默认七天
-		exp = 604800
+		// 默认两小时。web 后台(BackendUserAuth)不自动续期，到期需重新登录；
+		// 客户端(rustauth)仍走滑动续期，活跃会话不受影响。
+		exp = 7200
 	}
 	return time.Now().Add(exp).Unix()
 }
