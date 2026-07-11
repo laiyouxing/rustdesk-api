@@ -68,7 +68,7 @@ jobs:
         with:
           repository: laiyouxing/rustdesk-api-web
           path: rustdesk-api-web
-          ref: style/apple-beautify-consolidate
+          ref: master
 
       - name: Set up Go environment
         uses: actions/setup-go@v4
