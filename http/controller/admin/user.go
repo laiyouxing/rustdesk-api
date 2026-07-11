@@ -208,6 +208,8 @@ func (ct *User) UpdatePassword(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
 	}
+	// 改密码后清除该用户所有会话令牌，强制重新登录，防止旧 token 被冒用
+	_ = service.AllService.UserService.FlushToken(u)
 	response.Success(c, nil)
 }
 
@@ -267,6 +269,8 @@ func (ct *User) ChangeCurPwd(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
 	}
+	// 改密码后清除当前用户所有会话令牌，强制重新登录，防止旧 token 被冒用
+	_ = service.AllService.UserService.FlushToken(u)
 	response.Success(c, nil)
 }
 
@@ -396,6 +400,8 @@ func (ct *User) MfaDisable(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
 	}
+	// 关闭 MFA 后清除当前用户所有会话令牌，强制重新登录，防止旧 token 被冒用
+	_ = service.AllService.UserService.FlushToken(u)
 	response.Success(c, nil)
 }
 
@@ -434,6 +440,8 @@ func (ct *User) MfaReset(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
 	}
+	// 重置 MFA 后清除该用户所有会话令牌，强制重新登录，防止旧 token 被冒用
+	_ = service.AllService.UserService.FlushToken(u)
 	response.Success(c, nil)
 }
 
