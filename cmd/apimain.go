@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -210,11 +211,43 @@ func InitGlobal() {
 	global.LoginLimiter = utils.NewLoginLimiter(utils.SecurityPolicy{
 		CaptchaThreshold: global.Config.App.CaptchaThreshold,
 		BanThreshold:     global.Config.App.BanThreshold,
-		AttemptsWindow:   10 * time.Minute,
-		BanDuration:      30 * time.Minute,
+		AttemptsWindow:   banWindowDuration(),
+		BanDuration:      banDurationDuration(),
 	})
 	global.LoginLimiter.RegisterProvider(utils.B64StringCaptchaProvider{})
 	DatabaseAutoUpdate()
+}
+
+// isValidDatabaseName 校验数据库名格式（MySQL 标识符限制）：
+// 仅允许字母/数字/下划线，且必须以字母或下划线开头，长度不超过 64。
+// 用于 CREATE DATABASE 前的纵深防御，避免库名被污染时产生 SQL 注入。
+func isValidDatabaseName(name string) bool {
+	if name == "" || len(name) > 64 {
+		return false
+	}
+	matched, err := regexp.MatchString(`^[A-Za-z_][A-Za-z0-9_]*$`, name)
+	if err != nil {
+		return false
+	}
+	return matched
+}
+
+// banWindowDuration 返回登录失败计数的滑动窗口（分钟），缺失或非法(<=0)时回退默认 15 分钟。
+func banWindowDuration() time.Duration {
+	m := global.Config.App.BanWindowMinutes
+	if m <= 0 {
+		m = 15
+	}
+	return time.Duration(m) * time.Minute
+}
+
+// banDurationDuration 返回触发封禁后的封禁时长（分钟），缺失或非法(<=0)时回退默认 30 分钟。
+func banDurationDuration() time.Duration {
+	m := global.Config.App.BanDurationMinutes
+	if m <= 0 {
+		m = 30
+	}
+	return time.Duration(m) * time.Minute
 }
 
 func DatabaseAutoUpdate() {
@@ -251,7 +284,13 @@ func DatabaseAutoUpdate() {
 				}
 			}()
 
-			err = dbWithoutDB.Exec("CREATE DATABASE IF NOT EXISTS " + dbName + " DEFAULT CHARSET utf8mb4").Error
+			// 安全加固：执行 CREATE DATABASE 前校验库名格式，防止库名被污染时产生注入。
+			// 即便通过校验，也用反引号包裹标识符作为纵深防御。
+			if !isValidDatabaseName(dbName) {
+				global.Logger.Errorf("数据库名格式非法，已拒绝执行 CREATE DATABASE: %q", dbName)
+				return
+			}
+			err = dbWithoutDB.Exec("CREATE DATABASE IF NOT EXISTS `" + dbName + "` DEFAULT CHARSET utf8mb4").Error
 			if err != nil {
 				global.Logger.Error(err)
 				return

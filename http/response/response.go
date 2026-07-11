@@ -48,6 +48,17 @@ func Error(c *gin.Context, message string) {
 	})
 }
 
+// ServerError 以统一通用文案返回 500，避免向客户端泄露内部错误细节（如 SQL、堆栈信息）。
+// 供控制器在捕获到非预期的服务端错误时调用，替代直接把 err.Error() 回显给客户端。
+func ServerError(c *gin.Context) {
+	if !c.Writer.Written() {
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"code": 500,
+			"msg":  "服务器内部错误",
+		})
+	}
+}
+
 type ServerConfigResponse struct {
 	IdServer    string `json:"id_server"`
 	Key         string `json:"key"`

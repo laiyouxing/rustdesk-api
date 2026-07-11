@@ -33,7 +33,7 @@ func ApiInit() {
 	g.NoRoute(func(c *gin.Context) {
 		c.String(http.StatusNotFound, "404 not found")
 	})
-	g.Use(middleware.Logger(), gin.Recovery(), middleware.Cors())
+	g.Use(middleware.Recovery(), middleware.Logger(), middleware.Cors())
 	router.WebInit(g)
 	router.Init(g)
 	router.ApiInit(g)
