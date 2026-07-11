@@ -205,6 +205,13 @@ func InitGlobal() {
 	//jwt
 	//fmt.Println(global.Config.Jwt.PrivateKey)
 	global.Jwt = jwt.NewJwt(global.Config.Jwt.Key, global.Config.Jwt.ExpireDuration)
+	// SECURITY: JWT 签名密钥为空时，MFA 令牌生成会静默返回空串，
+	// 导致前端 MFA 流程无法完成（mfa_token="" 触发 "MFA令牌为必填字段" 错误）。
+	// 此处启动时即拦截，避免运行时才暴露问题。
+	if len(global.Jwt.Key) == 0 {
+		global.Logger.Fatalf("[SECURITY] jwt.key 为空！请在 conf/config.yaml 中配置 jwt.key（建议 openssl rand -hex 生成）。" +
+			"jwt.key 为空会导致 MFA 多因素认证流程完全不可用。")
+	}
 	//locker
 	global.Lock = lock.NewLocal()
 

@@ -62,7 +62,7 @@ proxy:
   enable: false
   host: "http://127.0.0.1:1080"
 jwt:
-  key: ""
+  key: "CHANGE-ME-生成方式-openssl-rand-hex-32"  # 必须修改！留空会导致 MFA 不可用
   expire-duration: 168h
 cors:
   # 允许跨域访问的源白名单（YAML 列表）。仅命中列表的 Origin 才会被反射并返回凭据头。
