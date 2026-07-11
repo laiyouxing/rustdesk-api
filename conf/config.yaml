@@ -5,6 +5,8 @@ app:
   register-status: 1 # 注册用户默认状态 1:启用 2:禁用
   captcha-threshold: 3 #   <0:disabled, 0 always, >0:enabled
   ban-threshold: 0 # 0:disabled, >0:enabled
+  ban-window-minutes: 15 # 连续登录失败计数的滑动窗口(分钟)，默认15；窗口外的旧失败记录会被自动清理
+  ban-duration-minutes: 30 # 触发封禁后该 IP 被禁止登录的时长(分钟)，默认30
   show-swagger: 0 # 1:启用 0:禁用
   token-expire: 168h
   web-sso: true #web auth sso
@@ -60,7 +62,7 @@ proxy:
   enable: false
   host: "http://127.0.0.1:1080"
 jwt:
-  key: ""
+  key: "CHANGE-ME-生成方式-openssl-rand-hex-32"  # 必须修改！留空会导致 MFA 不可用
   expire-duration: 168h
 cors:
   # 允许跨域访问的源白名单（YAML 列表）。仅命中列表的 Origin 才会被反射并返回凭据头。
@@ -68,6 +70,11 @@ cors:
   # 留空（[]）表示关闭跨域：任何跨域请求都不会得到 Access-Control-Allow-Origin，浏览器将拦截响应。
   # 注意：此处仅控制响应头，不会影响同源的管理后台/WebClient（同源请求不需要 CORS）。
   allow-origins: []
+# TOTP 校验时钟容差（时钟漂移周期数，每个周期 30s；Skew=N 即容忍 ±30s×N）。
+# 标准库默认 Skew=1（±30s）。运维中服务器/客户端时钟偏差或用户输入耗时偶发会踩线失败，
+# 这里默认 3（±90s）作为健壮性加固。取值 <1（含未配置/0）时由 service 回退到 3。
+# 若“始终”校验失败，应优先排查 mfa_secret 是否正确落库与时间是否同步，而非无限制放宽。
+mfa_totp_skew: 3
 ldap:
   enable: false
   url: "ldap://ldap.example.com:389"
@@ -89,3 +96,35 @@ ldap:
     sync: false         # If true, the user will be synchronized to the database when the user logs in. If false, the user will be synchronized to the database when the user be created.
     admin-group: "cn=admin,dc=example,dc=com" # The group name of the admin group, if the user is in this group, the user will be an admin.
     allow-group: "cn=users,dc=example,dc=com" # The group name of the users group, if the user is in this group, the user will be an login. 
+
+# 服务超时与可选 TLS（安全加固）
+# 默认走明文 HTTP；生产环境推荐由前置反向代理(nginx 等)做 TLS 终止，本服务只监听内网端口。
+server:
+  # 读超时(秒)：读取整个请求(含 body)的时限，防慢速攻击。默认 15
+  read-timeout: 15
+  # 写超时(秒)：写入响应的时限。默认 30
+  write-timeout: 30
+  # 空闲超时(秒)：keep-alive 空闲连接的最大存活时间。默认 120
+  idle-timeout: 120
+  # 可选：直接由 api-server 启用 HTTPS（需自备证书）。默认关闭。
+  tls:
+    enabled: false
+    cert-file: ""   # 例如 /path/to/fullchain.pem
+    key-file: ""    # 例如 /path/to/privkey.pem
+  # ---- 以下为“TLS 反向代理”落地建议（纯注释，不改逻辑）----
+  # 若由 nginx 做 TLS 终止并反代到本服务(假设本服务监听 127.0.0.1:21114)：
+  # server {
+  #     listen 443 ssl http2;
+  #     server_name api.example.com;
+  #     ssl_certificate     /etc/nginx/ssl/fullchain.pem;
+  #     ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+  #     # HSTS：强制浏览器仅用 HTTPS 访问
+  #     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+  #     location / {
+  #         proxy_pass http://127.0.0.1:21114;
+  #         proxy_set_header Host              $host;
+  #         proxy_set_header X-Real-IP         $remote_addr;
+  #         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+  #         proxy_set_header X-Forwarded-Proto $scheme;
+  #     }
+  # }

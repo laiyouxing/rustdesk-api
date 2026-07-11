@@ -23,7 +23,7 @@ type Oauth struct {
 // @Description OidcAuth
 // @Accept  json
 // @Produce  json
-// @Success 200 {object} apiResp.LoginRes
+// @Success 200 {object} api.LoginRes
 // @Failure 500 {object} response.ErrorResponse
 // @Router /oidc/auth [post]
 func (o *Oauth) OidcAuth(c *gin.Context) {
@@ -121,7 +121,7 @@ func (o *Oauth) OidcAuthQueryPre(c *gin.Context) (*model.User, *model.UserToken)
 // @Description OidcAuthQuery
 // @Accept  json
 // @Produce  json
-// @Success 200 {object} apiResp.LoginRes
+// @Success 200 {object} api.LoginRes
 // @Failure 500 {object} response.ErrorResponse
 // @Router /oidc/auth-query [get]
 func (o *Oauth) OidcAuthQuery(c *gin.Context) {
@@ -142,7 +142,7 @@ func (o *Oauth) OidcAuthQuery(c *gin.Context) {
 // @Description OauthCallback
 // @Accept  json
 // @Produce  json
-// @Success 200 {object} apiResp.LoginRes
+// @Success 200 {object} api.LoginRes
 // @Failure 500 {object} response.ErrorResponse
 // @Router /oidc/callback [get]
 func (o *Oauth) OauthCallback(c *gin.Context) {

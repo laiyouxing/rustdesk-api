@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	nethttp "net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"time"
 
@@ -20,6 +22,7 @@ import (
 	"github.com/lejianwen/rustdesk-api/v2/service"
 	"github.com/lejianwen/rustdesk-api/v2/utils"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"gorm.io/gorm"
 )
@@ -124,6 +127,10 @@ func InitGlobal() {
 		ReportCaller: global.Config.Logger.ReportCaller,
 	})
 
+	// 启动早期（配置已加载、日志已就绪，HTTP 服务尚未启动）打印时钟快照，
+	// 用于主动发现服务器时钟漂移——这正是此前 MFA 校验偶发失败的根因环境。
+	logClockSnapshot()
+
 	global.InitI18n()
 
 	//cache（按需初始化 Redis，避免闲置占用资源）
@@ -198,6 +205,13 @@ func InitGlobal() {
 	//jwt
 	//fmt.Println(global.Config.Jwt.PrivateKey)
 	global.Jwt = jwt.NewJwt(global.Config.Jwt.Key, global.Config.Jwt.ExpireDuration)
+	// SECURITY: JWT 签名密钥为空时，MFA 令牌生成会静默返回空串，
+	// 导致前端 MFA 流程无法完成（mfa_token="" 触发 "MFA令牌为必填字段" 错误）。
+	// 此处启动时即拦截，避免运行时才暴露问题。
+	if len(global.Jwt.Key) == 0 {
+		global.Logger.Fatalf("[SECURITY] jwt.key 为空！请在 conf/config.yaml 中配置 jwt.key（建议 openssl rand -hex 生成）。" +
+			"jwt.key 为空会导致 MFA 多因素认证流程完全不可用。")
+	}
 	//locker
 	global.Lock = lock.NewLocal()
 
@@ -210,11 +224,89 @@ func InitGlobal() {
 	global.LoginLimiter = utils.NewLoginLimiter(utils.SecurityPolicy{
 		CaptchaThreshold: global.Config.App.CaptchaThreshold,
 		BanThreshold:     global.Config.App.BanThreshold,
-		AttemptsWindow:   10 * time.Minute,
-		BanDuration:      30 * time.Minute,
+		AttemptsWindow:   banWindowDuration(),
+		BanDuration:      banDurationDuration(),
 	})
 	global.LoginLimiter.RegisterProvider(utils.B64StringCaptchaProvider{})
 	DatabaseAutoUpdate()
+}
+
+// defaultClockCheckURL 启动时时钟快照使用的参考时间源。
+// 该站点会在响应头返回标准 RFC1123 的 Date 字段，作为“权威参考时间”。
+// 在无外网环境（本地/CI）取不到时间时，会优雅跳过，绝不影响启动。
+const defaultClockCheckURL = "https://www.tencent.com"
+
+// logClockSnapshot 启动时打印一条时钟快照 INFO 日志：本地 UTC 时间 vs 参考时间（HTTP Date 头）及偏移。
+// 用于主动发现服务器时钟漂移——这正是此前 MFA 校验偶发失败的潜在根因环境。
+//
+// 健壮性约束（务必满足）：
+//   - 单次网络请求超时硬上限 3s，避免无外网时拖慢启动；
+//   - 任何网络错误/超时/无 Date 头/解析失败，均仅 Warn 跳过，绝不 panic、绝不阻塞启动；
+//   - 若 global.Logger 尚未就绪，退化为独立的 logrus 实例，保证日志本身不崩溃。
+func logClockSnapshot() {
+	lg := global.Logger
+	if lg == nil {
+		// 兜底：理论上 InitGlobal 已初始化 Logger；此处仅防极端时序，确保时钟快照永不 panic。
+		lg = logrus.New()
+	}
+
+	client := &nethttp.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(defaultClockCheckURL)
+	if err != nil {
+		lg.Warnf("[CLOCK] 跳过时钟快照：无法连接参考时间源 %s: %v", defaultClockCheckURL, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	dateStr := resp.Header.Get("Date")
+	if dateStr == "" {
+		lg.Warnf("[CLOCK] 跳过时钟快照：参考时间源 %s 未返回 Date 响应头", defaultClockCheckURL)
+		return
+	}
+	refTime, err := time.Parse(time.RFC1123, dateStr)
+	if err != nil {
+		lg.Warnf("[CLOCK] 跳过时钟快照：解析 Date 头失败 %q: %v", dateStr, err)
+		return
+	}
+
+	// 统一换算到 UTC 比较，消除本地时区差异；offsetMs 带符号：
+	// 正数表示本机时钟“快于”参考时间，负数表示“慢于”参考时间。
+	local := time.Now().UTC()
+	offsetMs := local.Sub(refTime).Milliseconds()
+	lg.Infof("[CLOCK] local=%s ref=%s offsetMs=%d",
+		local.Format(time.RFC3339), refTime.Format(time.RFC3339), offsetMs)
+}
+
+// isValidDatabaseName 校验数据库名格式（MySQL 标识符限制）：
+// 仅允许字母/数字/下划线，且必须以字母或下划线开头，长度不超过 64。
+// 用于 CREATE DATABASE 前的纵深防御，避免库名被污染时产生 SQL 注入。
+func isValidDatabaseName(name string) bool {
+	if name == "" || len(name) > 64 {
+		return false
+	}
+	matched, err := regexp.MatchString(`^[A-Za-z_][A-Za-z0-9_]*$`, name)
+	if err != nil {
+		return false
+	}
+	return matched
+}
+
+// banWindowDuration 返回登录失败计数的滑动窗口（分钟），缺失或非法(<=0)时回退默认 15 分钟。
+func banWindowDuration() time.Duration {
+	m := global.Config.App.BanWindowMinutes
+	if m <= 0 {
+		m = 15
+	}
+	return time.Duration(m) * time.Minute
+}
+
+// banDurationDuration 返回触发封禁后的封禁时长（分钟），缺失或非法(<=0)时回退默认 30 分钟。
+func banDurationDuration() time.Duration {
+	m := global.Config.App.BanDurationMinutes
+	if m <= 0 {
+		m = 30
+	}
+	return time.Duration(m) * time.Minute
 }
 
 func DatabaseAutoUpdate() {
@@ -251,7 +343,13 @@ func DatabaseAutoUpdate() {
 				}
 			}()
 
-			err = dbWithoutDB.Exec("CREATE DATABASE IF NOT EXISTS " + dbName + " DEFAULT CHARSET utf8mb4").Error
+			// 安全加固：执行 CREATE DATABASE 前校验库名格式，防止库名被污染时产生注入。
+			// 即便通过校验，也用反引号包裹标识符作为纵深防御。
+			if !isValidDatabaseName(dbName) {
+				global.Logger.Errorf("数据库名格式非法，已拒绝执行 CREATE DATABASE: %q", dbName)
+				return
+			}
+			err = dbWithoutDB.Exec("CREATE DATABASE IF NOT EXISTS `" + dbName + "` DEFAULT CHARSET utf8mb4").Error
 			if err != nil {
 				global.Logger.Error(err)
 				return

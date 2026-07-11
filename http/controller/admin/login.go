@@ -2,6 +2,7 @@ package admin
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/global"
@@ -24,7 +25,7 @@ type Login struct {
 // @Accept  json
 // @Produce  json
 // @Param body body admin.Login true "登录信息"
-// @Success 200 {object} response.Response{data=adResp.LoginPayload}
+// @Success 200 {object} response.Response{data=admin.LoginPayload}
 // @Failure 500 {object} response.Response
 // @Router /admin/login [post]
 // @Security token
@@ -114,7 +115,7 @@ func (ct *Login) Login(c *gin.Context) {
 // @Accept  json
 // @Produce  json
 // @Param body body admin.MfaLogin true "MFA 验证信息"
-// @Success 200 {object} response.Response{data=adResp.LoginPayload}
+// @Success 200 {object} response.Response{data=admin.LoginPayload}
 // @Failure 500 {object} response.Response
 // @Router /admin/login/mfa [post]
 func (ct *Login) MfaLogin(c *gin.Context) {
@@ -123,28 +124,33 @@ func (ct *Login) MfaLogin(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
 		return
 	}
-	// 日志：收到的 MFA 请求。
-	// SECURITY: 绝不在日志中记录真实的动态码(Code)或恢复码(RecoveryCode)，
-	// 这些信息等价于一次性口令，落入日志文件即等同于泄露。仅记录“是否携带”，不记录值。
-	global.Logger.Infof("[MFA] MfaLogin parsed={MfaToken=%q HasCode=%t HasRecoveryCode=%t Platform=%q}",
-		f.MfaToken, f.Code != "", f.RecoveryCode != "", f.Platform)
+	// DEBUG: 记录原始 body 结构（仅字段名和长度，不记录敏感值），用于排查前端未传 mfa_token 的问题
+	var rawBody map[string]interface{}
+	_ = c.ShouldBindJSON(&rawBody)
+	fieldLog := make([]string, 0, 4)
+	for k, v := range rawBody {
+		switch val := v.(type) {
+		case string:
+			fieldLog = append(fieldLog, fmt.Sprintf("%s(len=%d)", k, len(val)))
+		default:
+			fieldLog = append(fieldLog, fmt.Sprintf("%s(%T)", k, val))
+		}
+	}
+	global.Logger.Infof("[MFA] MfaLogin raw_body=[%s] parsed={MfaToken=%q HasCode=%t HasRecoveryCode=%t Platform=%q}",
+		strings.Join(fieldLog, ", "), f.MfaToken, f.Code != "", f.RecoveryCode != "", f.Platform)
 
 	errList := global.Validator.ValidStruct(c, f)
 	if len(errList) > 0 {
-		// 若 mfa_token 为空，尝试从 Header 兜底
+		// mfa_token 彻底缺失：返回专用错误码 114 引导前端重新走登录流程
 		if f.MfaToken == "" {
-			headerToken := c.GetHeader("X-Mfa-Token")
-			if headerToken != "" {
-				global.Logger.Infof("[MFA] MfaLogin: body mfa_token empty, fallback to X-Mfa-Token header")
-				f.MfaToken = headerToken
-				goto verify
-			}
+			global.Logger.Warnf("[MFA] MfaLogin: mfa_token missing from both body and header, raw fields=%v", fieldLog)
+			response.Fail(c, 114, response.TranslateMsg(c, "MfaTokenMissing"))
+			return
 		}
 		global.Logger.Warnf("[MFA] MfaLogin: validation failed: %v", errList)
 		response.Fail(c, 101, errList[0])
 		return
 	}
-verify:
 	uid, err := global.Jwt.ParseMfaToken(f.MfaToken)
 	if err != nil {
 		// SECURITY: MFA 临时令牌短时效(5分钟)且敏感，日志中只记录长度，避免泄露可被重放的令牌。
@@ -301,7 +307,7 @@ func (ct *Login) OidcAuth(c *gin.Context) {
 // @Description OidcAuthQuery
 // @Accept  json
 // @Produce  json
-// @Success 200 {object} response.Response{data=adResp.LoginPayload}
+// @Success 200 {object} response.Response{data=admin.LoginPayload}
 // @Failure 500 {object} response.Response
 // @Router /admin/oidc/auth-query [get]
 func (ct *Login) OidcAuthQuery(c *gin.Context) {

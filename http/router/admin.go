@@ -26,7 +26,7 @@ func Init(g *gin.Engine) {
 	ConfigBind(adg)
 
 	adg.Use(middleware.BackendUserAuth())
-	//FileBind(adg)
+	FileBind(adg)
 	UserBind(adg)
 	GroupBind(adg)
 	TagBind(adg)
@@ -79,6 +79,7 @@ func AlertChannelBind(adg *gin.RouterGroup) {
 	rg.POST("/create", cont.Create)
 	rg.POST("/update", cont.Update)
 	rg.POST("/delete", cont.Delete)
+	rg.POST("/test", cont.Test)
 }
 
 func AlertConfigBind(adg *gin.RouterGroup) {
@@ -145,15 +146,15 @@ func UserBind(rg *gin.RouterGroup) {
 	{
 		cont := &admin.User{}
 		aR.GET("/current", cont.Current)
-	aR.POST("/changeCurPwd", cont.ChangeCurPwd)
-	aR.POST("/myOauth", cont.MyOauth)
-	//aR.GET("/myPeer", cont.MyPeer)
-	aR.POST("/groupUsers", cont.GroupUsers)
-	// MFA(TOTP) 自服务：当前登录用户自身的多因素认证管理
-	aR.POST("/mfa/setup", cont.MfaSetup)
-	aR.POST("/mfa/enable", cont.MfaEnable)
-	aR.POST("/mfa/disable", cont.MfaDisable)
-	aR.GET("/mfa/status", cont.MfaStatus)
+		aR.POST("/changeCurPwd", cont.ChangeCurPwd)
+		aR.POST("/myOauth", cont.MyOauth)
+		//aR.GET("/myPeer", cont.MyPeer)
+		aR.POST("/groupUsers", cont.GroupUsers)
+		// MFA(TOTP) 自服务：当前登录用户自身的多因素认证管理
+		aR.POST("/mfa/setup", cont.MfaSetup)
+		aR.POST("/mfa/enable", cont.MfaEnable)
+		aR.POST("/mfa/disable", cont.MfaDisable)
+		aR.GET("/mfa/status", cont.MfaStatus)
 	}
 	aRP := rg.Group("/user").Use(middleware.AdminPrivilege())
 	{
@@ -333,7 +334,6 @@ func ConfigBind(rg *gin.RouterGroup) {
 	aR.POST("/restart", middleware.AdminPrivilege(), rs.ServiceRestart)
 }
 
-/*
 func FileBind(rg *gin.RouterGroup) {
 	aR := rg.Group("/file")
 	{
@@ -344,7 +344,7 @@ func FileBind(rg *gin.RouterGroup) {
 		aR.GET("/oss_token", cont.OssToken)
 		aR.POST("/upload", cont.Upload)
 	}
-}*/
+}
 
 func MyBind(rg *gin.RouterGroup) {
 	{

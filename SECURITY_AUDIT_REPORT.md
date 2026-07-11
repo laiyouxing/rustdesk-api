@@ -18,6 +18,10 @@
 | 6 | `cmd/apimain.go:447` | 信息泄露：初始 admin 密码被写入文件日志 | **Medium/High** | 改为仅 `fmt.Fprintf(os.Stderr, ...)` 一次性打印到控制台（不进入 `./runtime/log.txt`），并提示首次登录后立即修改。避免密码持久化到磁盘日志。 | ✅ |
 | 7 | `http/controller/admin/login.go:127-128`、`148` | 信息泄露：MFA 动态码/恢复码写入日志 | Medium | 不再记录真实 `Code`/`RecoveryCode`（仅记录是否携带）；解析失败的 mfa_token 仅记录长度。动态码等价于一次性口令，落日志即泄露。 | ✅ |
 | 8 | `generate_api.go`、`generate_run.go`（根目录） | 预存在的编译中断：`package main` 生成器文件无 `main()` 且无 build tag，`go build ./...` 在根包报 “function main is undeclared” | Low | 按 Go 惯例加 `//go:build ignore`，使 `go build`/`go vet`/`go test` 跳过这两个 `//go:generate` 辅助文件（`go generate` 仍会扫描其指令）。 | ✅ |
+| 9 | `config/config.go`（`App` 新增 `BanWindowMinutes`/`BanDurationMinutes`；`Config` 新增 `Server` + `ServerTLS`）、`conf/config.yaml`（新增 `server:` 段 + nginx TLS 反代示例注释）、`cmd/apimain.go`（`banWindowDuration`/`banDurationDuration` 接入 `NewLoginLimiter`） | 暴力破解防护默认偏弱（窗口/时长硬编码） | Medium | 暴力破解封禁的计数窗口与封禁时长改为可配置（默认 15/30 分钟），通过 `ban-threshold`/`ban-window-minutes`/`ban-duration-minutes` 控制；新增 `server.read-timeout/write-timeout/idle-timeout`（默认 15/30/120 秒）与可选 `server.tls.*`。（注：IP 封禁核心能力 `utils.LoginLimiter` + `http/middleware/limiter.go` 来自既有提交 #250，本项仅补全其可配置化，不重复造轮子以免双计。） | ✅ |
+| 10 | `http/run.go`(`!windows`：`endless.NewServer` + 超时)、`http/run_win.go`(`windows`：`&http.Server` + 超时)、`http/run_common.go`（超时默认值 helper） | TLS 与超时未配置（裸 HTTP 无超时） | Medium | 显式设置 `ReadTimeout/WriteTimeout/IdleTimeout`；`server.tls.enabled` 为真时 `ListenAndServeTLS`，否则 `ListenAndServe`。Linux 仍走 endless 优雅重启（`endlessServer.Serve()` 使用内嵌 `http.Server` 的超时）。默认关闭 TLS，不破坏现有明文运行。 | ✅ |
+| 11 | `http/middleware/recovery.go`（新增）、`http/http.go:36`（最外层注册，替换 `gin.Recovery()`）、`http/response/response.go`（新增 `ServerError` helper） | 错误信息泄露（500 回显 err） | Medium | 新增 panic 恢复中间件：仅打印服务端日志、返回统一 `{"code":500,"message":"服务器内部错误"}`，绝不回显 `err`/SQL/堆栈。注册为最外层（第一个）中间件。grep 全仓确认无控制器在 500 直接回显 `err.Error()`，故未改控制器逻辑（仅新增可选 helper 供后续使用）。 | ✅ |
+| 12 | `cmd/apimain.go`（`isValidDatabaseName` + `DatabaseAutoUpdate` 校验 + 反引号包裹） | `CREATE DATABASE` 字符串拼接 | Medium | 执行 `CREATE DATABASE` 前校验库名符合 `^[A-Za-z_][A-Za-z0-9_]*$` 且长度 ≤ 64；不合法记录日志并中止创建；即便合法也用反引号包裹标识符作纵深防御。 | ✅ |
 
 > 说明：第 8 项是**预存在的问题**，与本次安全修改无关，但阻塞了任务要求的 `go build ./...` 通过，故一并修复。
 
@@ -38,6 +42,8 @@
 
 ## 三、未改动但建议关注的项（建议后续处理）
 
+> 更新：原第 1–4 项（暴力破解默认、TLS/超时、500 信息泄露、`CREATE DATABASE` 拼接）已在本次 `feat/apiserver-security-hardening` 分支落地，详见上方修复清单 #9–#12。第 5 项（systemd 服务名校验）仍建议关注。
+
 1. **暴力破解防护默认偏弱**：`conf/config.yaml` 中 `ban-threshold: 0` 关闭了 IP 封禁（仅 `captcha-threshold: 3` 的验证码生效）。建议默认开启封禁（如 `ban-threshold: 10`）。当前 Limiter 中间件仅在 `/login` 生效且为内存态——多实例部署时各实例独立计数，建议后续接入 Redis 共享计数。
 2. **TLS 与超时未配置**：`http/http.go` 用 `gin.Run(addr)`（裸 HTTP、无 TLS、无 Read/Write/Idle 超时）。建议前置反向代理做 TLS，或为 `http.Server` 显式设置超时，避免慢速攻击/连接耗尽。
 3. **错误信息泄露**：大量控制器将 `err.Error()`（常含 SQL 片段/内部细节）直接返回客户端（如 `config.go`、`peer.go` 等）。建议 500 类错误返回通用文案，详细错误仅入日志。属系统性问题，未做大规模重构。
@@ -51,7 +57,7 @@
 - **`go build ./...`**：✅ PASS（exit 0）。修复了根目录生成器文件缺 build tag 导致的预存在编译中断。
 - **`go vet ./...`**：✅ PASS（exit 0）。
 - **`go test ./...`**：
-  - ✅ 通过：`lib/jwt`、`lib/lock`、`service`、`utils`（含 `login_limiter_test`、`jwt_test` 等）。
+  - ✅ 通过：`lib/jwt`、`lib/lock`、`service`、`utils`（含 `login_limiter_test`、`jwt_test` 等）、`http/middleware`（新增 `recovery_test`）、`cmd`（新增 `apimain_test` 库名校验）、`utils`（新增 `bruteforce_test` 封禁阈值）。
   - ⚠️ 失败（已跳过，非本次改动导致）：`lib/cache` 下的 `TestRedisCacheSet/Get`、`TestRedisSet/Get/GetJson` 因连接 `192.168.1.168:6379` 超时（`i/o timeout`）失败——依赖外部 Redis，本环境不可达。按任务要求未修改测试逻辑，跳过。
 
 ---
@@ -67,5 +73,9 @@
 - `http/controller/admin/login.go`
 - `http/router/admin.go`（仅注释）
 - `generate_api.go`、`generate_run.go`（新增 `//go:build ignore`）
+- `http/middleware/recovery.go`（新增）
+- `http/response/response.go`（新增 `ServerError`）
+- `http/run.go`、`http/run_win.go`（改写启动方式）、`http/run_common.go`（新增）
+- `cmd/apimain_test.go`、`utils/bruteforce_test.go`、`http/middleware/recovery_test.go`（新增单测）
 
 所有改动均保持最小、局部，未做任何大规模重构；鉴权/路由调整已确保管理后台备份、配置读写、重启等端点仍受 `AdminPrivilege` 保护。

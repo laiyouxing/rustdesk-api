@@ -94,6 +94,39 @@ func (ct *AlertChannel) AllList(c *gin.Context) {
 	response.Success(c, gin.H{"list": list})
 }
 
+// Test 测试发送一条消息到指定通道，用于验证通道配置是否正确
+// 请求体：AlertChannel 各字段（name/channel/webhook_url/smtp_*），可选 row_id 与 test_recipients
+func (ct *AlertChannel) Test(c *gin.Context) {
+	u := service.AllService.UserService.CurUser(c)
+	f := &model.AlertChannel{}
+	if err := c.ShouldBindJSON(f); err != nil {
+		response.Fail(c, 101, "参数错误")
+		return
+	}
+	var extra struct {
+		TestRecipients string `json:"test_recipients"`
+	}
+	_ = c.ShouldBindJSON(&extra)
+	if f.Channel == "" {
+		response.Fail(c, 101, "通道类型缺失")
+		return
+	}
+	// 若指定已保存通道且未提供密码，则从数据库补全（列表中的通道密码为空）
+	if f.RowId > 0 && f.SmtpPass == "" {
+		old := &model.AlertChannel{}
+		service.DB.Where("row_id = ? AND user_id = ?", f.RowId, u.Id).First(old)
+		if old.RowId > 0 {
+			f.SmtpPass = old.SmtpPass
+		}
+	}
+	if err := service.AllService.NotifyService.TestChannel(f, extra.TestRecipients); err != nil {
+		global.Logger.Warnf("[AlertChannel] Test send failed: %v", err)
+		response.Fail(c, 500, "发送失败："+err.Error())
+		return
+	}
+	response.Success(c, nil)
+}
+
 func parsePageParams(c *gin.Context) (page, pageSize uint) {
 	page = 1
 	pageSize = 20

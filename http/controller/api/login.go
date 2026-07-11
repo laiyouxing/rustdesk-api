@@ -23,7 +23,7 @@ type Login struct {
 // @Accept  json
 // @Produce  json
 // @Param body body api.LoginForm true "登录表单"
-// @Success 200 {object} apiResp.LoginRes
+// @Success 200 {object} api.LoginRes
 // @Failure 500 {object} response.ErrorResponse
 // @Router /login [post]
 func (l *Login) Login(c *gin.Context) {

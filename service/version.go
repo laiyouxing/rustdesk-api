@@ -12,7 +12,20 @@ func (s *AppReleaseService) Latest(platform string) *model.AppRelease {
 	var v model.AppRelease
 	db := DB.Where("status = ?", model.COMMON_STATUS_ENABLE)
 	if platform != "" {
-		db = db.Where("platform = ?", platform)
+		// platform 别名兼容：客户端可能发送 ubuntu/linux、macos/mac，
+		// 而后台存储的 platform 取值可能不一致，故按同义组匹配。
+		aliasMap := map[string][]string{
+			"ubuntu":  {"ubuntu", "linux"},
+			"linux":   {"linux", "ubuntu"},
+			"macos":   {"macos", "mac"},
+			"mac":     {"mac", "macos"},
+			"windows": {"windows"},
+		}
+		platforms, ok := aliasMap[platform]
+		if !ok {
+			platforms = []string{platform}
+		}
+		db = db.Where("platform IN ?", platforms)
 	}
 	db.Order("created_at desc").First(&v)
 	if v.Id > 0 {

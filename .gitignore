@@ -1,4 +1,6 @@
 .idea
+# AI 工作记录 - 不推送至远程
+.codebuddy/
 runtime/*
 !runtime
 !runtime/cache/.gitkeep

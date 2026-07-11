@@ -1,0 +1,152 @@
+# 系统语言，zh-CN 简体中文
+lang: "zh-CN"
+
+# 应用基础配置模块
+app:
+  web-client: 1  # 网页端远程控制客户端开关：1启用 0禁用
+  register: false # 是否开放用户自助注册功能，false关闭注册
+  register-status: 2 # 新注册用户默认账号状态：1正常启用 2禁用锁定
+  captcha-threshold: 3 # 验证码触发阈值：<0永久关闭验证码；0每次登录都要；>0连续失败N次后启用验证码
+  ban-threshold: 10 # 登录失败封禁阈值：0关闭自动封禁；>0连续输错密码达到次数自动封禁账号
+  ban-window-minutes: 15 # 连续登录失败计数的滑动窗口(分钟)，默认15；窗口外的旧失败记录会被自动清理
+  ban-duration-minutes: 30 # 触发封禁后该 IP 被禁止登录的时长(分钟)，默认30
+  show-swagger: 0 # 是否展示API接口文档Swagger：1开启 0关闭（生产环境建议关闭）
+  token-expire: 7200h # 登录凭证Token有效期
+  web-sso: true # 开启Web单点登录SSO能力
+  disable-pwd-login: false # 是否禁用账号密码登录，false保留密码登录
+
+# 后台管理面板配置模块
+admin:
+  title: "RustDesk API 广州聚杰定制版" # 管理后台页面标题
+  hello-file: "./conf/admin/hello.html"  # 管理后台首页自定义html文件，配置后优先加载文件内容
+  hello: "" # 管理后台首页自定义文本内容，hello-file存在时此字段失效
+  # ID服务器与中继服务器端口，参考官方issue#257
+  id-server-port: 21116  # ID服务器监听端口（服务端命令启动使用）
+  relay-server-port: 21117 # 中继转发服务器监听端口（服务端命令启动使用）
+  relay-stats-host: "127.0.0.1" # hbbr 负载/连接数查询地址(仅本机回环，api-server 需与 hbbr 同机)
+
+# Gin Web框架相关配置
+gin:
+  api-addr: "0.0.0.0:21114" # API服务监听地址端口，0.0.0.0允许所有网卡外网访问
+  mode: "release" # Gin运行模式：release生产/debug调试/test测试
+  resources-path: 'resources'  # 静态资源文件存放目录，对外可访问
+  trust-proxy: "127.0.0.1" # 信任反向代理IP，填写代理地址后可正确获取真实客户端IP，空则不启用
+
+# GORM数据库通用配置（ORM框架）
+gorm:
+  type: "sqlite" # 默认数据库类型：sqlite/mysql/postgresql，切换数据库需修改对应库配置
+  max-idle-conns: 10 # 数据库连接池最大空闲连接数
+  max-open-conns: 100 # 数据库连接池最大并发打开连接数
+
+# MySQL数据库连接配置，type=mysql时生效
+mysql:
+  username: "" # MySQL数据库用户名
+  password: "" # MySQL数据库密码
+  addr: "" # MySQL连接地址，格式 ip:port
+  dbname: "" # 需要连接的数据库库名
+  tls: "false" # MySQL TLS加密开关：true开启/false关闭/skip-verify跳过证书校验/custom自定义证书
+
+# PostgreSQL数据库连接配置，type=postgresql时生效
+postgresql:
+  host: "127.0.0.1" # PG数据库地址
+  port: "5432" # PG默认端口5432
+  user: "" # PG登录用户名
+  password: "" # PG登录密码
+  dbname: "postgres" # 默认连接数据库名
+  sslmode: "disable" # SSL加密模式：disable关闭/require强制开启/verify-ca校验CA证书/verify-full完整校验证书
+  time-zone: "Asia/Shanghai" # PG连接会话时区，上海东八区
+
+# RustDesk核心服务地址配置
+rustdesk:
+  id-server: "183.24.70.210:21116" # 自建ID服务器地址端口，客户端连接用
+  relay-server: "183.24.70.210:21117" # 自建中继转发服务器地址端口
+  api-server: "https://183.24.70.210:21120" # 本API服务自身访问地址
+  key: "yJ0zQ1ETilzNC02PeFttuPl5x5EfA4WN5fAFh0YVzPQ=" # Ed25519加密公钥字符串，二选一配置key/key-file
+  key-file: "" # Ed25519公钥文件路径，优先级高于key字段
+  personal: 1 # 个人地址薄模式开关 1关闭，开启只能用个人地址薄
+  webclient-magic-queryonline: 1 # 网页客户端在线状态查询优化开关，0关闭1开启
+  ws-host: ""  # WebSocket自定义地址，示例：wss://192.168.1.3:4443，空则自动使用默认地址
+
+# 日志输出配置
+logger:
+  path: "./runtime/log.txt" # 日志文件存储路径
+  level: "info" # 日志打印级别：trace最详细>debug>info>warn>error>fatal仅致命错误
+  report-caller: true # 是否打印日志调用代码行号、文件名称，true开启方便排错
+
+# 全局网络代理配置
+proxy:
+  enable: false # 是否开启全局代理访问外网
+  host: "http://127.0.0.1:1080" # 代理服务地址，http/socks代理均可
+
+# JWT登录鉴权配置
+jwt:
+  key: "" # JWT签名密钥，必须自定义复杂字符串保证安全
+  expire-duration: 168h # JWT令牌过期时长，同token-expire统一7天
+
+# 跨域访问配置（CORS）
+cors:
+  # 允许跨域访问的源白名单（YAML 列表）。仅命中列表的 Origin 才会被反射并返回凭据头。
+  # 例如：["https://admin.example.com", "https://app.example.com"]
+  # 留空（[]）表示关闭跨域：任何跨域请求都不会得到 Access-Control-Allow-Origin，浏览器将拦截响应。
+  # 注意：此处仅控制响应头，不会影响同源的管理后台/WebClient（同源请求不需要 CORS）。
+  allow-origins: []
+
+# TOTP 校验时钟容差（时钟漂移周期数，每个周期 30s；Skew=N 即容忍 ±30s×N）。
+# 标准库默认 Skew=1（±30s）。运维中服务器/客户端时钟偏差或用户输入耗时偶发会踩线失败，
+# 这里默认 3（±90s）作为健壮性加固。取值 <1（含未配置/0）时由 service 回退到 3。
+# 若“始终”校验失败，应优先排查 mfa_secret 是否正确落库与时间是否同步，而非无限制放宽。
+mfa_totp_skew: 3
+
+# LDAP域账号同步登录配置（AD/OpenLDAP）
+ldap:
+  enable: false # 是否启用LDAP单点登录，false关闭
+  url: "ldap://ldap.example.com:389" # LDAP服务连接地址，389默认非加密，636为ldaps加密端口
+  tls-ca-file: "" # LDAP TLS加密CA证书文件路径
+  tls-verify: false # TLS连接时是否校验证书合法性
+  base-dn: "dc=example,dc=com" # LDAP根域DN
+  bind-dn: "cn=admin,dc=example,dc=com" # LDAP管理员绑定账号DN，用于查询用户
+  bind-password: "password" # LDAP管理员账号密码
+  user:
+    base-dn: "ou=users,dc=example,dc=com" # 用户数据所在组织单元DN
+    enable-attr: ""       # 用户启用状态属性名；AD环境填userAccountControl，空代表所有用户默认启用
+    enable-attr-value: "" # 用户启用状态对应属性值；AD环境无需填写会自动忽略
+    filter: "(cn=*)" # LDAP用户查询过滤条件，匹配所有cn用户
+    username: "uid"       # 登录账号对应LDAP属性；Windows AD需改为sAMAccountName
+    email: "mail" # 用户邮箱对应的LDAP字段名
+    first-name: "givenName" # 用户名字段
+    last-name: "sn" # 用户姓氏字段
+    sync: false         # 用户同步逻辑：true登录时同步用户到数据库；false仅创建时同步
+    admin-group: "cn=admin,dc=example,dc=com" # 管理员用户组DN，组内成员登录后拥有后台管理员权限
+    allow-group: "cn=users,dc=example,dc=com" # 允许登录的普通用户组DN，仅该组内账号可登录系统
+
+# 服务超时与可选 TLS（安全加固）
+# 默认走明文 HTTP；生产环境推荐由前置反向代理(nginx 等)做 TLS 终止，本服务只监听内网端口。
+server:
+  # 读超时(秒)：读取整个请求(含 body)的时限，防慢速攻击。默认 15
+  read-timeout: 15
+  # 写超时(秒)：写入响应的时限。默认 30
+  write-timeout: 30
+  # 空闲超时(秒)：keep-alive 空闲连接的最大存活时间。默认 120
+  idle-timeout: 120
+  # 可选：直接由 api-server 启用 HTTPS（需自备证书）。默认关闭。
+  tls:
+    enabled: false
+    cert-file: ""   # 例如 /path/to/fullchain.pem
+    key-file: ""    # 例如 /path/to/privkey.pem
+  # ---- 以下为“TLS 反向代理”落地建议（纯注释，不改逻辑）----
+  # 若由 nginx 做 TLS 终止并反代到本服务(假设本服务监听 127.0.0.1:21114)：
+  # server {
+  #     listen 443 ssl http2;
+  #     server_name api.example.com;
+  #     ssl_certificate     /etc/nginx/ssl/fullchain.pem;
+  #     ssl_certificate_key /etc/nginx/ssl/privkey.pem;
+  #     # HSTS：强制浏览器仅用 HTTPS 访问
+  #     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+  #     location / {
+  #         proxy_pass http://127.0.0.1:21114;
+  #         proxy_set_header Host              $host;
+  #         proxy_set_header X-Real-IP         $remote_addr;
+  #         proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+  #         proxy_set_header X-Forwarded-Proto $scheme;
+  #     }
+  # }

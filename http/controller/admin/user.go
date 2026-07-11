@@ -217,7 +217,7 @@ func (ct *User) UpdatePassword(c *gin.Context) {
 // @Description 当前用户
 // @Accept  json
 // @Produce  json
-// @Success 200 {object} response.Response{data=adResp.LoginPayload}
+// @Success 200 {object} response.Response{data=admin.LoginPayload}
 // @Failure 500 {object} response.Response
 // @Router /admin/user/current [get]
 // @Security token
@@ -274,7 +274,7 @@ func (ct *User) ChangeCurPwd(c *gin.Context) {
 // @Description 我的授权
 // @Accept  json
 // @Produce  json
-// @Success 200 {object} response.Response{data=[]adResp.UserOauthItem}
+// @Success 200 {object} response.Response{data=[]admin.UserOauthItem}
 // @Failure 500 {object} response.Response
 // @Router /admin/user/myOauth [get]
 // @Security token

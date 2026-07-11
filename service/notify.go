@@ -46,30 +46,30 @@ func (s *NotifyService) SendByConfig(cfg *model.AlertConfig, title, content stri
 	}
 	switch ch.Channel {
 	case "wecom":
-		s.sendWecom(ch.WebhookUrl, title, content)
+		_ = s.sendWecom(ch.WebhookUrl, title, content)
 	case "dingtalk":
-		s.sendDingTalk(ch.WebhookUrl, title, content)
+		_ = s.sendDingTalk(ch.WebhookUrl, title, content)
 	case "smtp":
 		// 接收人来自告警规则（发送配置），而非通道
-		s.sendSmtpWithChannel(ch, cfg.Recipients, title, content)
+		_ = s.sendSmtpWithChannel(ch, cfg.Recipients, title, content)
 	}
 }
 
-func (s *NotifyService) sendWecom(webhook, title, content string) {
+func (s *NotifyService) sendWecom(webhook, title, content string) error {
 	body := fmt.Sprintf(`{"msgtype":"markdown","markdown":{"content":"## ⚠️ 设备离线告警\n**%s**\n%s"}}`, title, content)
-	s.postJson(webhook, body)
+	return s.postJson(webhook, body)
 }
 
-func (s *NotifyService) sendDingTalk(webhook, title, content string) {
+func (s *NotifyService) sendDingTalk(webhook, title, content string) error {
 	body := fmt.Sprintf(`{"msgtype":"text","text":{"content":"⚠️ 设备离线告警\n%s\n%s"}}`, title, content)
-	s.postJson(webhook, body)
+	return s.postJson(webhook, body)
 }
 
 // sendSmtpWithChannel 支持 465（SMTPS/TLS）和 587（STARTTLS）两种端口
 // recipients: 收件人邮箱列表（逗号分隔），来自告警规则的“接收人”配置
-func (s *NotifyService) sendSmtpWithChannel(ch *model.AlertChannel, recipientsStr, title, content string) {
+func (s *NotifyService) sendSmtpWithChannel(ch *model.AlertChannel, recipientsStr, title, content string) error {
 	if ch.SmtpHost == "" || recipientsStr == "" {
-		return
+		return fmt.Errorf("SMTP 主机或收件人为空")
 	}
 	addr := net.JoinHostPort(ch.SmtpHost, fmt.Sprintf("%d", ch.SmtpPort))
 	auth := smtp.PlainAuth("", ch.SmtpUser, ch.SmtpPass, ch.SmtpHost)
@@ -85,81 +85,76 @@ func (s *NotifyService) sendSmtpWithChannel(ch *model.AlertChannel, recipientsSt
 
 	tlsConfig := &tls.Config{InsecureSkipVerify: true}
 
-	deliver := func(client *smtp.Client) {
+	deliver := func(client *smtp.Client) error {
 		defer client.Close()
 		if err := client.Auth(auth); err != nil {
-			Logger.Warn("SMTP auth failed: ", err)
-			return
+			return fmt.Errorf("SMTP 认证失败: %w", err)
 		}
 		if err := client.Mail(ch.SmtpUser); err != nil {
-			Logger.Warn("SMTP mail from failed: ", err)
-			return
+			return fmt.Errorf("SMTP MAIL FROM 失败: %w", err)
 		}
 		for _, to := range recipients {
 			if err := client.Rcpt(to); err != nil {
-				Logger.Warn("SMTP Rcpt failed for ", to, ": ", err)
+				return fmt.Errorf("SMTP RCPT 失败(%s): %w", to, err)
 			}
 		}
 		w, err := client.Data()
 		if err != nil {
-			Logger.Warn("SMTP data failed: ", err)
-			return
+			return fmt.Errorf("SMTP DATA 失败: %w", err)
 		}
 		if _, err := io.Copy(w, strings.NewReader(msg)); err != nil {
-			Logger.Warn("SMTP write body failed: ", err)
+			return fmt.Errorf("SMTP 写入正文失败: %w", err)
 		}
 		if err := w.Close(); err != nil {
-			Logger.Warn("SMTP close body failed: ", err)
+			return fmt.Errorf("SMTP 关闭正文失败: %w", err)
 		}
+		return nil
 	}
 
 	if ch.SmtpPort == 587 {
 		// STARTTLS: 先明文连接，再升级到 TLS
 		conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
 		if err != nil {
-			Logger.Warn("SMTP dial failed: ", err)
-			return
+			return fmt.Errorf("SMTP 连接失败: %w", err)
 		}
 		client, err := smtp.NewClient(conn, ch.SmtpHost)
 		if err != nil {
 			conn.Close()
-			Logger.Warn("SMTP new client failed: ", err)
-			return
+			return fmt.Errorf("SMTP 客户端创建失败: %w", err)
 		}
 		if err = client.StartTLS(tlsConfig); err != nil {
 			client.Close()
 			conn.Close()
-			Logger.Warn("SMTP STARTTLS failed: ", err)
-			return
+			return fmt.Errorf("SMTP STARTTLS 失败: %w", err)
 		}
-		deliver(client)
-		conn.Close()
-	} else {
-		// 默认 465 SMTPS: 直接 TLS 连接
-		conn, err := tls.Dial("tcp", addr, tlsConfig)
-		if err != nil {
-			Logger.Warn("SMTP TLS dial failed: ", err)
-			return
-		}
-		client, err := smtp.NewClient(conn, ch.SmtpHost)
-		if err != nil {
-			conn.Close()
-			Logger.Warn("SMTP new client failed: ", err)
-			return
-		}
-		deliver(client)
-		conn.Close()
+		return deliver(client)
 	}
+	// 默认 465 SMTPS: 直接 TLS 连接
+	conn, err := tls.Dial("tcp", addr, tlsConfig)
+	if err != nil {
+		return fmt.Errorf("SMTP TLS 连接失败: %w", err)
+	}
+	client, err := smtp.NewClient(conn, ch.SmtpHost)
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("SMTP 客户端创建失败: %w", err)
+	}
+	return deliver(client)
 }
 
-func (s *NotifyService) postJson(url, body string) {
+func (s *NotifyService) postJson(url, body string) error {
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Post(url, "application/json", bytes.NewBufferString(body))
 	if err != nil {
 		Logger.Warn("Notify post failed: ", err)
-		return
+		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(b))
+	}
+	return nil
 }
 
 func base64Encode(s string) string {
@@ -203,4 +198,23 @@ func buildEmailHTML(title, content string) string {
 	</div>
 </body>
 </html>`, title, rows.String())
+}
+
+// TestChannel 向指定通道发送一条测试消息，返回发送结果错误（nil 表示成功）
+func (s *NotifyService) TestChannel(ch *model.AlertChannel, recipients string) error {
+	const title = "RustDesk 告警通道测试"
+	const content = "这是一条来自 RustDesk 告警系统的测试消息，如果您收到说明配置正确。"
+	switch ch.Channel {
+	case "wecom":
+		return s.sendWecom(ch.WebhookUrl, title, content)
+	case "dingtalk":
+		return s.sendDingTalk(ch.WebhookUrl, title, content)
+	case "smtp":
+		if recipients == "" {
+			recipients = ch.SmtpUser // 默认发给自己
+		}
+		return s.sendSmtpWithChannel(ch, recipients, title, content)
+	default:
+		return fmt.Errorf("不支持的通道类型: %s", ch.Channel)
+	}
 }

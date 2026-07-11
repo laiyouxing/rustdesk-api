@@ -63,6 +63,11 @@ description = "MFA code error."
 one = "动态验证码错误，请重试。"
 other = "动态验证码错误，请重试。"
 
+[MfaTokenMissing]
+description = "MFA token missing from request."
+one = "MFA 令牌缺失或已过期，请返回登录页面重新操作。"
+other = "MFA 令牌缺失或已过期，请返回登录页面重新操作。"
+
 [MfaSecretEmpty]
 description = "MFA secret empty."
 one = "请先获取 MFA 密钥。"

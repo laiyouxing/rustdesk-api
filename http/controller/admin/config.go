@@ -142,7 +142,8 @@ func (co *Config) ConfigFileUpdate(c *gin.Context) {
 	}
 	var req Req
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
+		global.Logger.Error("config update bind/parse error: " + err.Error())
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+" 配置格式有误，请检查输入")
 		return
 	}
 	path := global.ConfigPath
@@ -154,7 +155,8 @@ func (co *Config) ConfigFileUpdate(c *gin.Context) {
 	v := viper.New()
 	v.SetConfigType("yaml")
 	if err := v.ReadConfig(strings.NewReader(req.Content)); err != nil {
-		response.Fail(c, 101, "配置格式错误(YAML 解析失败)："+err.Error())
+		global.Logger.Error("config file YAML parse error: " + err.Error())
+		response.Fail(c, 101, "配置格式错误(YAML 解析失败)，请检查 YAML 语法")
 		return
 	}
 	if err := os.WriteFile(path, []byte(req.Content), 0644); err != nil {
