@@ -10,6 +10,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"github.com/lejianwen/rustdesk-api/v2/utils"
+	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 	"gorm.io/gorm"
 )
@@ -574,9 +575,32 @@ func (us *UserService) DisableMfa(u *model.User) error {
 	}).Error
 }
 
+// mfaTotpSkew 允许的时钟漂移周期数（每个周期 30s）。
+// 标准库 totp.Validate 默认 Skew=1（仅容忍 ±30s）。运维中服务器/客户端时钟偏差、
+// 或用户输码耗时，偶发会踩线失败；这里适度放大到 Skew=3（±90s）作为健壮性加固。
+// 注意：若“始终”校验失败，应优先排查 mfa_secret 是否正确落库与时间是否同步，
+// 而非无限制放宽窗口掩盖真正的代码/数据问题。
+const mfaTotpSkew = 3
+
 // VerifyMfaCode 校验 TOTP 动态码
 func (us *UserService) VerifyMfaCode(u *model.User, code string) bool {
-	return totp.Validate(code, u.MfaSecret)
+	// secret 为空说明启用流程/Migration 未正确落库，直接拒绝并打告警便于排障，
+	// 避免静默返回 false 让“验证码错误”难以定位根因。
+	if u.MfaSecret == "" {
+		Logger.Warnf("[MFA] VerifyMfaCode: u.Id=%d mfa_secret 为空，跳过校验（疑似启用流程/Migration 未落库）", u.Id)
+		return false
+	}
+	ok, err := totp.ValidateCustom(code, u.MfaSecret, time.Now().UTC(), totp.ValidateOpts{
+		Period:    30,
+		Skew:      mfaTotpSkew,
+		Digits:    otp.DigitsSix,
+		Algorithm: otp.AlgorithmSHA1,
+	})
+	if err != nil {
+		Logger.Warnf("[MFA] VerifyMfaCode: u.Id=%d 校验异常: %v", u.Id, err)
+		return false
+	}
+	return ok
 }
 
 // VerifyMfaRecovery 校验恢复码并消费（一次性），成功返回 true
