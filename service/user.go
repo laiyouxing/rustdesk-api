@@ -105,8 +105,10 @@ func (us *UserService) GenerateToken(u *model.User) string {
 // Login 登录
 func (us *UserService) Login(u *model.User, llog *model.LoginLog) *model.UserToken {
 	token := us.GenerateToken(u)
-	// 计算来源指纹（IP + User-Agent），用于后续校验请求来源，防止 token 被盗用。
-	fp := utils.Md5(llog.Ip + "|" + llog.UserAgent)
+	// 计算来源指纹（仅 User-Agent），用于后续校验请求来源，防止 token 被盗用。
+	// 注意：不使用 IP，因为在 nginx 反代 / IPv4-IPv6 双栈下，同一会话不同请求的
+	// c.ClientIP() 会变化，导致指纹误判为异地盗用而被拒（403）。
+	fp := utils.Md5(llog.UserAgent)
 	ut := &model.UserToken{
 		UserId:     u.Id,
 		Token:      token,

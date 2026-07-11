@@ -20,8 +20,9 @@ func BackendUserAuth() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		// 计算来源指纹（IP + User-Agent），与签发时存储的指纹比对，防止 token 异地盗用
-		fingerprint := utils.Md5(c.ClientIP() + "|" + c.GetHeader("User-Agent"))
+		// 计算来源指纹（仅 User-Agent），与签发时存储的指纹比对，防止 token 异地盗用。
+		// 不含 IP：反代/双栈下 c.ClientIP() 会在同一会话内波动，导致误判。
+		fingerprint := utils.Md5(c.GetHeader("User-Agent"))
 		user, _ := service.AllService.UserService.InfoByAccessToken(token, fingerprint)
 		if user.Id == 0 {
 			// token 无效、过期或来源不匹配：清除可能残留的 Cookie 并拒绝
