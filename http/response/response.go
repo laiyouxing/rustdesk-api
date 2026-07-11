@@ -38,7 +38,20 @@ func Success(c *gin.Context, data interface{}) {
 	SendResponse(c, 0, "success", data)
 }
 
+// Fail 返回失败响应（HTTP 200 + JSON 体中携带业务 code/message/data，与全站约定一致）。
+//
+// 安全收口（统一 500 错误响应）：当 code >= 500（服务端错误）时，无论调用方传入何种
+// message，一律不向客户端回显内部错误细节（可能包含 SQL、表名、文件路径、堆栈等敏感信息），
+// 仅返回统一通用文案 "服务器内部错误"，并把调用方传入的原始 message 仅记录到服务端日志，
+// 以便排障。4xx 等客户端错误仍按原样透传 message（如参数校验提示）。
 func Fail(c *gin.Context, code int, message string) {
+	if code >= 500 {
+		if message != "" {
+			// 仅记录到服务端日志，绝不给客户端回显。
+			global.Logger.Error("server error response suppressed for client: " + message)
+		}
+		message = "服务器内部错误"
+	}
 	SendResponse(c, code, message, nil)
 }
 
