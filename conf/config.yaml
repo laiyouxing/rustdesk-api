@@ -70,6 +70,11 @@ cors:
   # 留空（[]）表示关闭跨域：任何跨域请求都不会得到 Access-Control-Allow-Origin，浏览器将拦截响应。
   # 注意：此处仅控制响应头，不会影响同源的管理后台/WebClient（同源请求不需要 CORS）。
   allow-origins: []
+# TOTP 校验时钟容差（时钟漂移周期数，每个周期 30s；Skew=N 即容忍 ±30s×N）。
+# 标准库默认 Skew=1（±30s）。运维中服务器/客户端时钟偏差或用户输入耗时偶发会踩线失败，
+# 这里默认 3（±90s）作为健壮性加固。取值 <1（含未配置/0）时由 service 回退到 3。
+# 若“始终”校验失败，应优先排查 mfa_secret 是否正确落库与时间是否同步，而非无限制放宽。
+mfa_totp_skew: 3
 ldap:
   enable: false
   url: "ldap://ldap.example.com:389"

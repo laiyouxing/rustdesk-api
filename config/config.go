@@ -82,6 +82,11 @@ type Config struct {
 	Ldap       Ldap
 	Cors       Cors
 	Server     Server
+	// MfaTotpSkew 允许 TOTP 校验容忍的时钟漂移周期数（每个周期 30s）。
+	// 标准库 totp.Validate 默认 Skew=1（仅容忍 ±30s）；运维中服务器/客户端时钟偏差
+	// 或用户输入耗时偶发会踩线失败，故默认放宽为 3（±90s）。运维可在 config.yaml 中
+	// 调整（mfa_totp_skew），无需重新编译。取值 <1 时由 service 回退到默认 3。
+	MfaTotpSkew int `mapstructure:"mfa_totp_skew"`
 }
 
 func (a *Admin) Init() {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	nethttp "net/http"
 	"os"
 	"regexp"
 	"strconv"
@@ -21,6 +22,7 @@ import (
 	"github.com/lejianwen/rustdesk-api/v2/service"
 	"github.com/lejianwen/rustdesk-api/v2/utils"
 	"github.com/nicksnyder/go-i18n/v2/i18n"
+	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 	"gorm.io/gorm"
 )
@@ -125,6 +127,10 @@ func InitGlobal() {
 		ReportCaller: global.Config.Logger.ReportCaller,
 	})
 
+	// 启动早期（配置已加载、日志已就绪，HTTP 服务尚未启动）打印时钟快照，
+	// 用于主动发现服务器时钟漂移——这正是此前 MFA 校验偶发失败的根因环境。
+	logClockSnapshot()
+
 	global.InitI18n()
 
 	//cache（按需初始化 Redis，避免闲置占用资源）
@@ -216,6 +222,52 @@ func InitGlobal() {
 	})
 	global.LoginLimiter.RegisterProvider(utils.B64StringCaptchaProvider{})
 	DatabaseAutoUpdate()
+}
+
+// defaultClockCheckURL 启动时时钟快照使用的参考时间源。
+// 该站点会在响应头返回标准 RFC1123 的 Date 字段，作为“权威参考时间”。
+// 在无外网环境（本地/CI）取不到时间时，会优雅跳过，绝不影响启动。
+const defaultClockCheckURL = "https://www.tencent.com"
+
+// logClockSnapshot 启动时打印一条时钟快照 INFO 日志：本地 UTC 时间 vs 参考时间（HTTP Date 头）及偏移。
+// 用于主动发现服务器时钟漂移——这正是此前 MFA 校验偶发失败的潜在根因环境。
+//
+// 健壮性约束（务必满足）：
+//   - 单次网络请求超时硬上限 3s，避免无外网时拖慢启动；
+//   - 任何网络错误/超时/无 Date 头/解析失败，均仅 Warn 跳过，绝不 panic、绝不阻塞启动；
+//   - 若 global.Logger 尚未就绪，退化为独立的 logrus 实例，保证日志本身不崩溃。
+func logClockSnapshot() {
+	lg := global.Logger
+	if lg == nil {
+		// 兜底：理论上 InitGlobal 已初始化 Logger；此处仅防极端时序，确保时钟快照永不 panic。
+		lg = logrus.New()
+	}
+
+	client := &nethttp.Client{Timeout: 3 * time.Second}
+	resp, err := client.Get(defaultClockCheckURL)
+	if err != nil {
+		lg.Warnf("[CLOCK] 跳过时钟快照：无法连接参考时间源 %s: %v", defaultClockCheckURL, err)
+		return
+	}
+	defer resp.Body.Close()
+
+	dateStr := resp.Header.Get("Date")
+	if dateStr == "" {
+		lg.Warnf("[CLOCK] 跳过时钟快照：参考时间源 %s 未返回 Date 响应头", defaultClockCheckURL)
+		return
+	}
+	refTime, err := time.Parse(time.RFC1123, dateStr)
+	if err != nil {
+		lg.Warnf("[CLOCK] 跳过时钟快照：解析 Date 头失败 %q: %v", dateStr, err)
+		return
+	}
+
+	// 统一换算到 UTC 比较，消除本地时区差异；offsetMs 带符号：
+	// 正数表示本机时钟“快于”参考时间，负数表示“慢于”参考时间。
+	local := time.Now().UTC()
+	offsetMs := local.Sub(refTime).Milliseconds()
+	lg.Infof("[CLOCK] local=%s ref=%s offsetMs=%d",
+		local.Format(time.RFC3339), refTime.Format(time.RFC3339), offsetMs)
 }
 
 // isValidDatabaseName 校验数据库名格式（MySQL 标识符限制）：

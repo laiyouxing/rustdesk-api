@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lejianwen/rustdesk-api/v2/config"
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"github.com/pquerna/otp/totp"
 	"github.com/sirupsen/logrus"
@@ -55,5 +56,45 @@ func TestVerifyMfaCode_Regression(t *testing.T) {
 	// 新行为（VerifyMfaCode, Skew=3）在此偏移下应通过 —— 验证加固生效
 	if !us.VerifyMfaCode(u, skewedCode) {
 		t.Fatalf("加固后 VerifyMfaCode 在 60s 偏移下应能通过")
+	}
+}
+
+// TestVerifyMfaCode_ConfigurableSkew 验证 mfa_totp_skew 配置生效：
+// 运维可通过 config.yaml 的 mfa_totp_skew 调整 TOTP 时钟容差（Skew=N → 容忍 ±30s×N），
+// 无需重新编译。本测试同时覆盖“放大容差接受更大偏移”与“默认容差拒绝过大偏移”两种情形。
+func TestVerifyMfaCode_ConfigurableSkew(t *testing.T) {
+	// 避免 Logger.Warnf 在测试中 nil panic
+	Logger = logrus.New()
+	defer func() { Config = nil }() // 还原全局，避免污染其他测试
+
+	us := &UserService{}
+	key, err := totp.Generate(totp.GenerateOpts{Issuer: "RustDesk", AccountName: "alice"})
+	if err != nil {
+		t.Fatalf("totp.Generate: %v", err)
+	}
+	u := &model.User{Username: "alice", MfaEnabled: true, MfaSecret: key.Secret()}
+
+	const offset = 150 * time.Second // 150s 偏移：仅 Skew>=5（±150s）才能容忍
+
+	// 1) 配置较大容差 Skew=6（±180s）：150s 偏移应通过
+	Config = &config.Config{MfaTotpSkew: 6}
+	code, err := totp.GenerateCode(u.MfaSecret, time.Now().Add(-offset))
+	if err != nil {
+		t.Fatalf("GenerateCode(skewed): %v", err)
+	}
+	if !us.VerifyMfaCode(u, code) {
+		t.Fatalf("配置 Skew=6 时，%v 偏移的验证码应能通过", offset)
+	}
+
+	// 2) 对照：回退为默认 Skew=3（±90s）< 150s：应被拒绝
+	Config = &config.Config{MfaTotpSkew: 3}
+	if us.VerifyMfaCode(u, code) {
+		t.Fatalf("默认 Skew=3 时，%v 偏移的验证码不应通过", offset)
+	}
+
+	// 3) 边界：配置非法值（0 / 负数）应回退默认 Skew=3，150s 偏移仍被拒绝
+	Config = &config.Config{MfaTotpSkew: 0}
+	if us.VerifyMfaCode(u, code) {
+		t.Fatalf("非法配置 Skew=0 应回退默认(3)，%v 偏移的验证码不应通过", offset)
 	}
 }
