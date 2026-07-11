@@ -11,8 +11,8 @@ import (
 )
 
 // TestRecovery_ReturnsGeneric500OnPanic 验证 panic 被兜住时：
-// 1) 返回 HTTP 500；
-// 2) 响应为统一通用文案 {"code":500,"msg":"服务器内部错误"}；
+// 1) 返回 HTTP 200（业务 code 500，与全站 5xx 收口一致）；
+// 2) 响应为统一通用文案 {"code":500,"message":"服务器内部错误"}；
 // 3) panic 细节（可能含 SQL/堆栈）不会泄露到响应体。
 func TestRecovery_ReturnsGeneric500OnPanic(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -26,8 +26,8 @@ func TestRecovery_ReturnsGeneric500OnPanic(t *testing.T) {
 	req, _ := http.NewRequest(http.MethodGet, "/panic", nil)
 	r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
 	}
 
 	var body map[string]interface{}
@@ -37,8 +37,8 @@ func TestRecovery_ReturnsGeneric500OnPanic(t *testing.T) {
 	if body["code"] != float64(500) {
 		t.Errorf("expected code 500, got %v", body["code"])
 	}
-	if body["msg"] != "服务器内部错误" {
-		t.Errorf("expected generic msg, got %v", body["msg"])
+	if body["message"] != "服务器内部错误" {
+		t.Errorf("expected generic message, got %v", body["message"])
 	}
 
 	// 确保 panic 细节没有泄露到响应体

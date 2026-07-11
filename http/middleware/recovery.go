@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -24,7 +25,13 @@ func Recovery() gin.HandlerFunc {
 		defer func() {
 			if r := recover(); r != nil {
 				// 仅记录到服务端日志，不向客户端泄露任何细节。
-				global.Logger.Error("panic recovered: " + fmt.Sprintf("%v", r))
+				// 注意：测试/未初始化场景下 global.Logger 可能为 nil，需降级到 stdlib log，
+				// 否则 recover 处理函数自身会因 nil 指针再次 panic 而冒泡。
+				if global.Logger != nil {
+					global.Logger.Error("panic recovered: " + fmt.Sprintf("%v", r))
+				} else {
+					log.Printf("[Recovery] panic recovered: %v", r)
+				}
 				// 若响应头尚未写出，才返回统一 5xx 包络（HTTP 200 + code 500），避免 superfluous WriteHeader。
 				if !c.Writer.Written() {
 					c.Abort()
@@ -41,9 +48,13 @@ func Recovery() gin.HandlerFunc {
 // 替代直接把 err.Error() 回显给客户端。
 func AbortServerError(c *gin.Context) {
 	if !c.Writer.Written() {
-		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+		c.Abort()
+
+		c.JSON(http.StatusOK, gin.H{
+
 			"code": 500,
-			"msg":  "服务器内部错误",
+
+			"message": "服务器内部错误",
 		})
 	}
 }

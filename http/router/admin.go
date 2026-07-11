@@ -145,15 +145,15 @@ func UserBind(rg *gin.RouterGroup) {
 	{
 		cont := &admin.User{}
 		aR.GET("/current", cont.Current)
-	aR.POST("/changeCurPwd", cont.ChangeCurPwd)
-	aR.POST("/myOauth", cont.MyOauth)
-	//aR.GET("/myPeer", cont.MyPeer)
-	aR.POST("/groupUsers", cont.GroupUsers)
-	// MFA(TOTP) 自服务：当前登录用户自身的多因素认证管理
-	aR.POST("/mfa/setup", cont.MfaSetup)
-	aR.POST("/mfa/enable", cont.MfaEnable)
-	aR.POST("/mfa/disable", cont.MfaDisable)
-	aR.GET("/mfa/status", cont.MfaStatus)
+		aR.POST("/changeCurPwd", cont.ChangeCurPwd)
+		aR.POST("/myOauth", cont.MyOauth)
+		//aR.GET("/myPeer", cont.MyPeer)
+		aR.POST("/groupUsers", cont.GroupUsers)
+		// MFA(TOTP) 自服务：当前登录用户自身的多因素认证管理
+		aR.POST("/mfa/setup", cont.MfaSetup)
+		aR.POST("/mfa/enable", cont.MfaEnable)
+		aR.POST("/mfa/disable", cont.MfaDisable)
+		aR.GET("/mfa/status", cont.MfaStatus)
 	}
 	aRP := rg.Group("/user").Use(middleware.AdminPrivilege())
 	{
