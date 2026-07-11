@@ -18,7 +18,7 @@ type Process struct{}
 // @Description 客户端定时上报各监控项是否运行；响应回带该设备最新监控配置（后台集中下发）
 // @Accept  json
 // @Produce  json
-// @Param body body requstform.ProcessStatusForm true "上报状态"
+// @Param body body api.ProcessStatusForm true "上报状态"
 // @Success 200 {object} response.Response
 // @Router /process/status [post]
 // @Security token

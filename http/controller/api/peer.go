@@ -19,7 +19,7 @@ type Peer struct {
 // @Description 提交系统信息
 // @Accept  json
 // @Produce  json
-// @Param body body requstform.PeerForm true "系统信息表单"
+// @Param body body api.PeerForm true "系统信息表单"
 // @Success 200 {string} string "SYSINFO_UPDATED,ID_NOT_FOUND"
 // @Failure 500 {object} response.ErrorResponse
 // @Router /sysinfo [post]

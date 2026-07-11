@@ -60,7 +60,7 @@ func (a *Ab) Ab(c *gin.Context) {
 // @Description 地址更新
 // @Accept  json
 // @Produce  json
-// @Param body body requstform.AddressBookForm true "地址表单"
+// @Param body body api.AddressBookForm true "地址表单"
 // @Success 200 {string} string "null"
 // @Failure 500 {object} response.ErrorResponse
 // @Router /ab [post]
