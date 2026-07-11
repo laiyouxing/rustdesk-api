@@ -79,6 +79,7 @@ func AlertChannelBind(adg *gin.RouterGroup) {
 	rg.POST("/create", cont.Create)
 	rg.POST("/update", cont.Update)
 	rg.POST("/delete", cont.Delete)
+	rg.POST("/test", cont.Test)
 }
 
 func AlertConfigBind(adg *gin.RouterGroup) {
