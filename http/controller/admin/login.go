@@ -143,6 +143,12 @@ func (ct *Login) MfaLogin(c *gin.Context) {
 	if len(errList) > 0 {
 		// mfa_token 彻底缺失：返回专用错误码 114 引导前端重新走登录流程
 		if f.MfaToken == "" {
+			headerToken := c.GetHeader("X-Mfa-Token")
+			if headerToken != "" {
+				global.Logger.Infof("[MFA] MfaLogin: body mfa_token empty, fallback to X-Mfa-Token header")
+				f.MfaToken = headerToken
+				goto verify
+			}
 			global.Logger.Warnf("[MFA] MfaLogin: mfa_token missing from both body and header, raw fields=%v", fieldLog)
 			response.Fail(c, 114, response.TranslateMsg(c, "MfaTokenMissing"))
 			return
@@ -151,6 +157,7 @@ func (ct *Login) MfaLogin(c *gin.Context) {
 		response.Fail(c, 101, errList[0])
 		return
 	}
+verify:
 	uid, err := global.Jwt.ParseMfaToken(f.MfaToken)
 	if err != nil {
 		// SECURITY: MFA 临时令牌短时效(5分钟)且敏感，日志中只记录长度，避免泄露可被重放的令牌。
