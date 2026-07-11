@@ -63,6 +63,11 @@ description = "MFA code error."
 one = "Invalid verification code, please try again."
 other = "Invalid verification code, please try again."
 
+[MfaTokenMissing]
+description = "MFA token missing from request."
+one = "MFA token missing or expired, please return to login and try again."
+other = "MFA token missing or expired, please return to login and try again."
+
 [MfaSecretEmpty]
 description = "MFA secret empty."
 one = "Please generate the MFA secret first."
