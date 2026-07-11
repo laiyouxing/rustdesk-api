@@ -2,6 +2,7 @@ package admin
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/global"
@@ -123,11 +124,20 @@ func (ct *Login) MfaLogin(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
 		return
 	}
-	// 日志：收到的 MFA 请求。
-	// SECURITY: 绝不在日志中记录真实的动态码(Code)或恢复码(RecoveryCode)，
-	// 这些信息等价于一次性口令，落入日志文件即等同于泄露。仅记录“是否携带”，不记录值。
-	global.Logger.Infof("[MFA] MfaLogin parsed={MfaToken=%q HasCode=%t HasRecoveryCode=%t Platform=%q}",
-		f.MfaToken, f.Code != "", f.RecoveryCode != "", f.Platform)
+	// DEBUG: 记录原始 body 结构（仅字段名和长度，不记录敏感值），用于排查前端未传 mfa_token 的问题
+	var rawBody map[string]interface{}
+	_ = c.ShouldBindJSON(&rawBody)
+	fieldLog := make([]string, 0, 4)
+	for k, v := range rawBody {
+		switch val := v.(type) {
+		case string:
+			fieldLog = append(fieldLog, fmt.Sprintf("%s(len=%d)", k, len(val)))
+		default:
+			fieldLog = append(fieldLog, fmt.Sprintf("%s(%T)", k, val))
+		}
+	}
+	global.Logger.Infof("[MFA] MfaLogin raw_body=[%s] parsed={MfaToken=%q HasCode=%t HasRecoveryCode=%t Platform=%q}",
+		strings.Join(fieldLog, ", "), f.MfaToken, f.Code != "", f.RecoveryCode != "", f.Platform)
 
 	errList := global.Validator.ValidStruct(c, f)
 	if len(errList) > 0 {
@@ -139,6 +149,10 @@ func (ct *Login) MfaLogin(c *gin.Context) {
 				f.MfaToken = headerToken
 				goto verify
 			}
+			// mfa_token 彻底缺失：返回专用错误码 114 引导前端重新走登录流程
+			global.Logger.Warnf("[MFA] MfaLogin: mfa_token missing from both body and header, raw fields=%v", fieldLog)
+			response.Fail(c, 114, response.TranslateMsg(c, "MfaTokenMissing"))
+			return
 		}
 		global.Logger.Warnf("[MFA] MfaLogin: validation failed: %v", errList)
 		response.Fail(c, 101, errList[0])
