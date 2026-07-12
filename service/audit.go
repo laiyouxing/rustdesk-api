@@ -45,6 +45,20 @@ func (as *AuditService) InfoByPeerIdAndConnId(peerId string, connId int64) (res 
 	return
 }
 
+// UpsertByPeerIdAndConnId 按 (peer_id, conn_id) 更新已存在记录的非零字段；不存在则创建。
+// 客户端连接建立时先发 new（不带 peer 信息），授权成功后再发一条不带 action 的更新补全
+// from_peer/from_name/session_id/type。两条为独立异步 HTTP，存在到达顺序竞态：
+// 若更新先于 new 到达，旧逻辑因查不到记录而丢弃更新，导致最终记录缺失来源名称。
+// 改为 upsert 后，无论到达顺序，两条请求都会命中同一条记录并合并各自字段（Updates 只写非零字段，
+// 不会用空值覆盖已有信息），彻底消除竞态丢失。
+func (as *AuditService) UpsertByPeerIdAndConnId(u *model.AuditConn) error {
+	ex := as.InfoByPeerIdAndConnId(u.PeerId, u.ConnId)
+	if ex.Id != 0 {
+		return DB.Model(&model.AuditConn{}).Where("id = ?", ex.Id).Updates(u).Error
+	}
+	return DB.Create(u).Error
+}
+
 // ConnInfoById
 func (as *AuditService) ConnInfoById(id uint) (res *model.AuditConn) {
 	res = &model.AuditConn{}
