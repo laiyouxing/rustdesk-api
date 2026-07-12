@@ -35,6 +35,9 @@ func (a *Audit) AuditConn(c *gin.Context) {
 	fmt.Println(ttt)*/
 	ac := af.ToAuditConn()
 	if af.Action == model.AuditActionNew {
+		// 同一用户再次向同一对端发起连接时，先把上一条仍“进行中”的记录关闭，
+		// 避免异常断开（未收到 close 审计）导致“最近连接记录”一直显示“进行中”。
+		service.AllService.AuditService.CloseInProgressByFromPeerAndPeer(ac.FromPeer, ac.PeerId)
 		service.AllService.AuditService.CreateAuditConn(ac)
 	} else if af.Action == model.AuditActionClose {
 		ex := service.AllService.AuditService.InfoByPeerIdAndConnId(af.Id, af.ConnId)

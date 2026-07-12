@@ -130,3 +130,24 @@ func (as *AuditService) closeStaleConns() {
 func (as *AuditService) BatchDeleteAuditFile(ids []uint) error {
 	return DB.Where("id in (?)", ids).Delete(&model.AuditFile{}).Error
 }
+
+// CloseInProgressByFromPeerAndPeer 关闭同一用户(FromPeer)对同一对端(PeerId)仍“进行中”(close_time=0)的连接审计记录。
+// 用于解决异常断开（客户端未发送 close 审计）导致“最近连接记录”一直显示“进行中”的问题：
+// 当该用户再次向同一对端发起连接(new)时，把上一条仍在进行中的记录置为已关闭，状态即被重置。
+// 该操作幂等，多实例部署也安全。
+func (as *AuditService) CloseInProgressByFromPeerAndPeer(fromPeer, peerId string) {
+	if fromPeer == "" || peerId == "" {
+		return
+	}
+	now := time.Now().Unix()
+	res := DB.Model(&model.AuditConn{}).
+		Where("close_time = 0 AND from_peer = ? AND peer_id = ?", fromPeer, peerId).
+		Update("close_time", now)
+	if res.Error != nil {
+		global.Logger.Warn("CloseInProgressByFromPeerAndPeer", res.Error)
+		return
+	}
+	if res.RowsAffected > 0 {
+		global.Logger.Infof("CloseInProgressByFromPeerAndPeer: closed %d in-progress audit_conn for %s -> %s", res.RowsAffected, fromPeer, peerId)
+	}
+}
