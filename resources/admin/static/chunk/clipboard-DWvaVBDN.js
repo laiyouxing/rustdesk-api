@@ -1,0 +1,1 @@
+import{ah as a}from"./__vendor-LtSsU5Wq.js";import{T as s}from"../entry/index-C_NyA7V_.js";import{b as e}from"./_element-plus-B9QtHUnP.js";function n(t,r){const o=new a(r.target.toString(),{text:()=>t});o.on("success",()=>{e.success(s("CopySuccess")),o.destroy()}),o.on("error",()=>{e.error(s("CopyFailed")),o.destroy()}),o.onClick(r)}export{n as h};
