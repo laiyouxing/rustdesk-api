@@ -76,9 +76,9 @@ jobs:
           go-version: '1.23'  # 选择 Go 版本
 
       - name: Set up npm
-        uses: actions/setup-node@v2
+        uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: build rustdesk-api-web
         working-directory: rustdesk-api-web
@@ -154,23 +154,7 @@ jobs:
           name: rustdesk-api-${{ env.VERSION }}-${{ matrix.job.goos }}-${{ matrix.job.platform }}
           path: |
             release/
-
-      - name: Upload to GitHub Release
-        if: env.TAG_VERSION != ''
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.TAG_VERSION }}
-          name: ${{ env.TAG_VERSION }}
-          files: |
             ${{ matrix.job.goos}}-${{ matrix.job.platform }}.${{matrix.job.file_ext}}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Generate Changelog
-        if: startsWith(github.ref, 'refs/tags/') && github.event_name == 'push'
-        run: npx changelogithub # or changelogithub@0.12 if ensure the stable result
-        env:
-          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
   deb-package:
     name: debian package - ${{ matrix.job.platform }}
@@ -250,14 +234,48 @@ jobs:
           path: |
             debian-build/*.deb
 
-      - name: Create Release
+  release:
+    name: Create GitHub Release
+    needs: [build, deb-package]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Get tag version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            TAG_VERSION="${GITHUB_REF##*/}"
+          elif [ -n "$VERSION_TAG" ]; then
+            TAG_VERSION="$VERSION_TAG"
+          else
+            TAG_VERSION=""
+          fi
+          echo "TAG_VERSION=$TAG_VERSION" >> $GITHUB_ENV
+
+      - name: Upload to GitHub Release
         if: env.TAG_VERSION != ''
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ env.TAG_VERSION }}
           name: ${{ env.TAG_VERSION }}
+          allow_override: true
           files: |
-            debian-build/rustdesk-api-server_*_${{ matrix.job.debian_platform }}.deb
+            artifacts/**/*.tar.gz
+            artifacts/**/*.zip
+            artifacts/**/*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Changelog
+        if: startsWith(github.ref, 'refs/tags/') && github.event_name == 'push' && env.TAG_VERSION != ''
+        run: npx changelogithub
+        env:
+          GITHUB_TOKEN: ${{secrets.GITHUB_TOKEN}}
 
   docker:
     name: Push Docker Image
