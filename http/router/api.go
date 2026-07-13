@@ -88,6 +88,14 @@ func ApiInit(g *gin.Engine) {
 		frg.POST("/audit/file", au.AuditFile)
 	}
 
+	// 进程/端口监控：客户端上报状态 + 拉取下发配置
+	// 允许未登录（无 token）设备上报；已登录设备仍验证 token
+	{
+		pm := &api.Process{}
+		frg.POST("/process/status", middleware.ProcessMonitorAuth(), pm.ProcessStatus)
+		frg.GET("/process/config", middleware.ProcessMonitorAuth(), pm.ProcessConfig)
+	}
+
 	frg.Use(middleware.RustAuth())
 	{
 		u := &api.User{}
@@ -116,12 +124,8 @@ func ApiInit(g *gin.Engine) {
 
 	PersonalRoutes(frg)
 
-	// 进程/端口监控：客户端上报状态 + 拉取下发配置（需 Bearer 鉴权）
-	{
-		p := &api.Process{}
-		frg.POST("/process/status", p.ProcessStatus)
-		frg.GET("/process/config", p.ProcessConfig)
-	}
+	// 进程/端口监控路由已移至 RustAuth 之前（见下方），以支持未登录设备上报
+
 	//访问静态文件
 	g.StaticFS("/upload", http.Dir(global.Config.Gin.ResourcesPath+"/public/upload"))
 }
