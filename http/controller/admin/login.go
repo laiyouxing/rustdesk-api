@@ -127,26 +127,17 @@ func (ct *Login) MfaLogin(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
 		return
 	}
-	// DEBUG: 记录原始 body 结构（仅字段名和长度，不记录敏感值），用于排查前端未传 mfa_token 的问题
-	var rawBody map[string]interface{}
-	_ = c.ShouldBindJSON(&rawBody)
-	fieldLog := make([]string, 0, 4)
-	for k, v := range rawBody {
-		switch val := v.(type) {
-		case string:
-			fieldLog = append(fieldLog, fmt.Sprintf("%s(len=%d)", k, len(val)))
-		default:
-			fieldLog = append(fieldLog, fmt.Sprintf("%s(%T)", k, val))
-		}
-	}
-	global.Logger.Infof("[MFA] MfaLogin raw_body=[%s] parsed={MfaToken=%q HasCode=%t HasRecoveryCode=%t Platform=%q}",
-		strings.Join(fieldLog, ", "), f.MfaToken, f.Code != "", f.RecoveryCode != "", f.Platform)
+	// 记录已解析出的关键字段（不记录敏感值），用于排查 mfa_token/动态码相关问题。
+	// 注意：不可在此处再次调用 c.ShouldBindJSON，因为请求体已被上方的 ShouldBindJSON(f) 消费，
+	// 二次读取会得到空体，导致日志失真且可能干扰后续处理。
+	global.Logger.Infof("[MFA] MfaLogin parsed={MfaToken_len=%d HasCode=%t HasRecoveryCode=%t Platform=%q}",
+		len(f.MfaToken), f.Code != "", f.RecoveryCode != "", f.Platform)
 
 	errList := global.Validator.ValidStruct(c, f)
 	if len(errList) > 0 {
 		// mfa_token 彻底缺失：返回专用错误码 114 引导前端重新走登录流程
 		if f.MfaToken == "" {
-			global.Logger.Warnf("[MFA] MfaLogin: mfa_token missing from both body and header, raw fields=%v", fieldLog)
+			global.Logger.Warnf("[MFA] MfaLogin: mfa_token missing (body and header both empty)")
 			response.Fail(c, 114, response.TranslateMsg(c, "MfaTokenMissing"))
 			return
 		}
