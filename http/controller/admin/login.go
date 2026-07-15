@@ -293,7 +293,7 @@ func (ct *Login) OidcAuth(c *gin.Context) {
 		Uuid:     f.Uuid,
 		Verifier: verifier,
 		Nonce:    nonce,
-	}, 5*60)
+	}, 3600) // webauto 流程：TTL 设为 1 小时避免管理员登录超时
 
 	response.Success(c, gin.H{
 		"code": state,

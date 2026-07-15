@@ -52,7 +52,7 @@ func (o *Oauth) OidcAuth(c *gin.Context) {
 		DeviceType: f.DeviceInfo.Type,
 		Verifier:   verifier,
 		Nonce:      nonce,
-	}, 5*60)
+	}, 3600) // webauto 流程：管理员可能需要 5+ 分钟登录，将 TTL 设为 1 小时
 	//fmt.Println("code url", code, url)
 	c.JSON(http.StatusOK, gin.H{
 		"code": state,
