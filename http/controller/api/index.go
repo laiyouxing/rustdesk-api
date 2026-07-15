@@ -61,6 +61,11 @@ func (i *Index) Heartbeat(c *gin.Context) {
 		service.AllService.PeerService.Update(upp)
 	}
 
+	// 记录活跃连接的心跳（客户端上报的 conns 列表）
+	if len(info.Conns) > 0 {
+		service.AllService.AuditService.RecordConnHeartbeat(info.Id, info.Conns)
+	}
+
 	resp := gin.H{}
 
 	// 策略下发：按用户指定优先级查找

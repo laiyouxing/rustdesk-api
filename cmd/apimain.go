@@ -49,8 +49,10 @@ var rootCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		global.Logger.Info("API SERVER START")
 		http.ApiInit()
-		// 后台定时清理“进行中”的孤儿连接审计记录（旧客户端退出未发 close 等场景）
+		// 后台定时清理孤儿连接审计记录
 		go service.AllService.AuditService.StartStaleConnCloseSweep()
+		// 基于心跳 conns 的快速连接心跳检测（60s 超时），检测异常断开
+		go service.AllService.AuditService.StartConnHeartbeatSweep()
 	},
 }
 
@@ -232,7 +234,7 @@ func InitGlobal() {
 }
 
 // defaultClockCheckURL 启动时时钟快照使用的参考时间源。
-// 该站点会在响应头返回标准 RFC1123 的 Date 字段，作为“权威参考时间”。
+// 该站点会在响应头返回标准 RFC1123 的 Date 字段，作为"权威参考时间"。
 // 在无外网环境（本地/CI）取不到时间时，会优雅跳过，绝不影响启动。
 const defaultClockCheckURL = "https://www.tencent.com"
 
@@ -270,7 +272,7 @@ func logClockSnapshot() {
 	}
 
 	// 统一换算到 UTC 比较，消除本地时区差异；offsetMs 带符号：
-	// 正数表示本机时钟“快于”参考时间，负数表示“慢于”参考时间。
+	// 正数表示本机时钟"快于"参考时间，负数表示"慢于"参考时间。
 	local := time.Now().UTC()
 	offsetMs := local.Sub(refTime).Milliseconds()
 	lg.Infof("[CLOCK] local=%s ref=%s offsetMs=%d",

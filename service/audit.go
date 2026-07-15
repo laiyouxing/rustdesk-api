@@ -1,9 +1,13 @@
 package service
 
 import (
+	"fmt"
 	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"gorm.io/gorm"
+	"strconv"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -138,6 +142,76 @@ func (as *AuditService) closeStaleConns() {
 	}
 	if res.RowsAffected > 0 {
 		global.Logger.Infof("closeStaleConns: closed %d stale 'in-progress' audit_conn records", res.RowsAffected)
+	}
+}
+
+// ========== 连接心跳追踪 ==========
+// connHeartbeats 记录每个活跃连接的最近心跳时间。
+// key = "peerId:connId", value = time.Time
+var connHeartbeats sync.Map
+
+// RecordConnHeartbeat 记录一批连接的心跳时间。
+// 在 Heartbeat 控制器中调用，传入客户端心跳上报的活跃连接列表。
+func (as *AuditService) RecordConnHeartbeat(peerId string, connIds []int) {
+	now := time.Now()
+	for _, cid := range connIds {
+		connHeartbeats.Store(fmt.Sprintf("%s:%d", peerId, cid), now)
+	}
+}
+
+// StartConnHeartbeatSweep 后台定时清理心跳超时的连接审计记录。
+// 如果某个活跃连接在 60 秒内没有心跳更新（客户端异常断开），则关闭审计记录。
+// 与 StartStaleConnCloseSweep 并存：前者更快（60s）、更精细（逐连接）；
+// 后者更保守（5min）兜底设备级离线。
+func (as *AuditService) StartConnHeartbeatSweep() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+	as.closeStaleConnsByHeartbeat()
+	for range ticker.C {
+		as.closeStaleConnsByHeartbeat()
+	}
+}
+
+func (as *AuditService) closeStaleConnsByHeartbeat() {
+	now := time.Now()
+	threshold := now.Add(-60 * time.Second)
+	var toClose []string // peerId:connId 格式
+	connHeartbeats.Range(func(key, value interface{}) bool {
+		if lastBeat, ok := value.(time.Time); ok {
+			if lastBeat.Before(threshold) {
+				toClose = append(toClose, key.(string))
+			}
+		}
+		return true
+	})
+	if len(toClose) == 0 {
+		return
+	}
+	// 遍历要关闭的记录
+	var closedCount int64
+	for _, key := range toClose {
+		parts := strings.SplitN(key, ":", 2)
+		if len(parts) != 2 {
+			connHeartbeats.Delete(key)
+			continue
+		}
+		peerId, connIdStr := parts[0], parts[1]
+		connId, err := strconv.ParseInt(connIdStr, 10, 64)
+		if err != nil {
+			connHeartbeats.Delete(key)
+			continue
+		}
+		res := DB.Model(&model.AuditConn{}).
+			Where("close_time = 0").
+			Where("peer_id = ? AND conn_id = ?", peerId, connId).
+			Update("close_time", now.Unix())
+		if res.Error == nil {
+			closedCount += res.RowsAffected
+		}
+		connHeartbeats.Delete(key)
+	}
+	if closedCount > 0 {
+		global.Logger.Infof("connHeartbeatSweep: closed %d stale connections (heartbeat timeout)", closedCount)
 	}
 }
 
