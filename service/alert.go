@@ -172,9 +172,10 @@ func (s *AlertService) checkOfflineDevices() {
 
 		peerIds, monitorAll := s.getMonitoredPeerIds(&cfg)
 
-		// 加载被监控设备的在线信息
+		// 加载被监控设备的在线信息（排除距今超过 30 天未上线的设备）
 		var peers []model.Peer
-		q := DB.Select("id, last_online_time, hostname, alias")
+		q := DB.Select("id, last_online_time, hostname, alias").
+			Where("last_online_time > ?", now-30*86400)
 		if !monitorAll && len(peerIds) > 0 {
 			q = q.Where("id in (?)", peerIds)
 		} else if !monitorAll {
