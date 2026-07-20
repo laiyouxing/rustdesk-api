@@ -177,7 +177,4 @@ func (i *Index) Version(c *gin.Context) {
 	)
 }
 
-// VersionAdmin 版本管理页面
-func (i *Index) VersionAdmin(c *gin.Context) {
-	c.HTML(http.StatusOK, "version_admin.html", gin.H{})
-}
+

@@ -5,15 +5,9 @@ import (
 	"github.com/lejianwen/rustdesk-api/v2/http/response"
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"github.com/lejianwen/rustdesk-api/v2/service"
-	"net/http"
 )
 
 type ClientDownload struct{}
-
-// Page 下载链接管理页面
-func (v *ClientDownload) Page(c *gin.Context) {
-	c.HTML(http.StatusOK, "client_download_admin.html", gin.H{})
-}
 
 // List 获取列表
 func (v *ClientDownload) List(c *gin.Context) {

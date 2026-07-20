@@ -9,16 +9,11 @@ import (
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"github.com/lejianwen/rustdesk-api/v2/service"
 	"gorm.io/gorm"
-	"net/http"
 	"strconv"
 	"time"
 )
 
 type Peer struct{}
-
-func (ct *Peer) Page(c *gin.Context) {
-	c.HTML(http.StatusOK, "peer_admin.html", gin.H{})
-}
 
 // Detail 设备
 // @Tags 设备

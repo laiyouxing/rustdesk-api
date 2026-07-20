@@ -67,7 +67,6 @@ func Init(g *gin.Engine) {
 func DashboardBind(adg *gin.RouterGroup) {
 	cont := &admin.Dashboard{}
 	rg := adg.Group("/dashboard")
-	rg.GET("/", cont.Page)
 	rg.GET("/stats", cont.Stats)
 }
 
@@ -230,7 +229,6 @@ func PeerBind(rg *gin.RouterGroup) {
 	aR.Use(middleware.AdminPrivilege())
 	{
 		cont := &admin.Peer{}
-		aR.GET("/", cont.Page)
 		aR.GET("/list", cont.List)
 		aR.GET("/detail/:id", cont.Detail)
 		aR.POST("/create", cont.Create)
@@ -431,7 +429,6 @@ func VersionBind(rg *gin.RouterGroup) {
 	vR := rg.Group("/version").Use(middleware.AdminPrivilege())
 	{
 		cont := &admin.Version{}
-		vR.GET("/", cont.VersionAdmin)
 		vR.GET("/list", cont.List)
 		vR.POST("/create", cont.Create)
 		vR.POST("/update", cont.Update)
@@ -444,7 +441,6 @@ func ClientDownloadBind(rg *gin.RouterGroup) {
 	vR := rg.Group("/client_download").Use(middleware.AdminPrivilege())
 	{
 		cont := &admin.ClientDownload{}
-		vR.GET("/", cont.Page)
 		vR.GET("/list", cont.List)
 		vR.POST("/create", cont.Create)
 		vR.POST("/update", cont.Update)

@@ -4,14 +4,9 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/http/response"
 	"github.com/lejianwen/rustdesk-api/v2/service"
-	"net/http"
 )
 
 type Dashboard struct{}
-
-func (d *Dashboard) Page(c *gin.Context) {
-	c.HTML(http.StatusOK, "dashboard_admin.html", gin.H{})
-}
 
 func (d *Dashboard) Stats(c *gin.Context) {
 	u := service.AllService.UserService.CurUser(c)
