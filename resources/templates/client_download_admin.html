@@ -47,6 +47,21 @@ tr:hover td { background: #f8f9ff; }
 .hidden { display: none; }
 .action-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
 .empty { text-align: center; color: #999; padding: 40px; }
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+@media (max-width: 768px) {
+  .header { padding: 12px 16px; flex-wrap: wrap; }
+  .header h1 { font-size: 17px; }
+  .container { padding: 10px; }
+  .card-body { padding: 10px 8px; }
+  .form-row { flex-direction: column; gap: 8px; }
+  .form-group { min-width: 100%; }
+  th, td { padding: 6px 8px; font-size: 12px; }
+  .btn { min-height: 44px; padding: 10px 16px; font-size: 14px; }
+  .btn-sm { min-height: 36px; padding: 6px 14px; font-size: 13px; }
+  .login-box { width: 90vw; max-width: 360px; padding: 24px 20px; }
+  .toast { left: 16px; right: 16px; top: 12px; text-align: center; }
+  .badge { padding: 3px 8px; font-size: 12px; }
+}
 </style>
 </head>
 <body>
@@ -95,10 +110,12 @@ tr:hover td { background: #f8f9ff; }
   <div class="card">
     <div class="card-title">已配置的下载链接</div>
     <div class="card-body">
+      <div class="table-wrap">
       <table id="dataTable">
         <thead><tr><th>ID</th><th>名称</th><th>平台</th><th>下载地址</th><th>排序</th><th>状态</th><th>创建时间</th><th>操作</th></tr></thead>
         <tbody id="dataBody"></tbody>
       </table>
+      </div>
       <div id="emptyTip" class="empty hidden">暂无下载链接</div>
     </div>
   </div>

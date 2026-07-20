@@ -48,6 +48,22 @@ tr:hover td { background: #f8f9ff; }
 .pagination { display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 12px; }
 .pagination .btn { min-width: 60px; }
 .pagination .info { font-size: 13px; color: #666; }
+.table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+@media (max-width: 768px) {
+  .header { padding: 12px 16px; flex-wrap: wrap; }
+  .header h1 { font-size: 17px; }
+  .container { padding: 10px; }
+  .card-body { padding: 10px 8px; }
+  th, td { padding: 6px 8px; font-size: 12px; }
+  .btn { min-height: 44px; padding: 10px 16px; font-size: 14px; }
+  .btn-sm { min-height: 36px; padding: 6px 12px; font-size: 12px; }
+  .login-box { width: 90vw; max-width: 360px; padding: 24px 20px; }
+  .toast { left: 16px; right: 16px; top: 12px; text-align: center; }
+  .filter-bar { gap: 4px; }
+  .filter-bar .btn { min-height: 36px; padding: 6px 12px; }
+  .pagination { flex-wrap: wrap; }
+  .badge { padding: 3px 8px; font-size: 12px; }
+}
 </style>
 </head>
 <body>
@@ -79,10 +95,12 @@ tr:hover td { background: #f8f9ff; }
       </div>
     </div>
     <div class="card-body">
+      <div class="table-wrap">
       <table>
         <thead><tr><th>ID</th><th>设备ID</th><th>主机名</th><th>用户</th><th>IP</th><th>版本</th><th>平台</th><th>状态</th><th>最后在线</th></tr></thead>
         <tbody id="peerBody"></tbody>
       </table>
+      </div>
       <div id="emptyTip" class="empty hidden">暂无设备记录</div>
       <div class="pagination" id="pagination">
         <button class="btn btn-primary btn-sm" id="prevBtn" onclick="prevPage()">上一页</button>
