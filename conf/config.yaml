@@ -8,7 +8,7 @@ app:
   ban-window-minutes: 15 # 连续登录失败计数的滑动窗口(分钟)，默认15；窗口外的旧失败记录会被自动清理
   ban-duration-minutes: 30 # 触发封禁后该 IP 被禁止登录的时长(分钟)，默认30
   show-swagger: 0 # 1:启用 0:禁用
-  token-expire: 2h # web 后台不自动续期，到期需重新登录；客户端(rustauth)滑动续期不受影响
+  token-expire: 2h # Web Admin 登录态过期时间（查 DB expired_at，此值即为实际寿命）
   web-sso: true #web auth sso
   disable-pwd-login: false #禁用密码登录
 
@@ -63,7 +63,7 @@ proxy:
   host: "http://127.0.0.1:1080"
 jwt:
   key: "CHANGE-ME-生成方式-openssl-rand-hex-32"  # 必须修改！留空会导致 MFA 不可用
-  expire-duration: 168h
+  expire-duration: 168h # JWT 内置有效期；客户端 API(RustAuth) 优先验 JWT 不查 DB，实际寿命取 token-expire 与 expire-duration 中较长者
 cors:
   # 允许跨域访问的源白名单（YAML 列表）。仅命中列表的 Origin 才会被反射并返回凭据头。
   # 例如：["https://admin.example.com", "https://app.example.com"]

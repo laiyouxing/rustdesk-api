@@ -130,7 +130,7 @@ func (as *AuditService) closeStaleConns() {
 	offlineThreshold := now.Unix() - 300      // 对端离线超过 5 分钟
 	maxAgeThreshold := now.Add(-24 * time.Hour) // 记录超过 24 小时
 	sub := DB.Model(&model.Peer{}).
-		Select("peer_id").
+		Select("id").
 		Where("last_online_time <= ? OR last_online_time = 0", offlineThreshold)
 	res := DB.Model(&model.AuditConn{}).
 		Where("close_time = 0").

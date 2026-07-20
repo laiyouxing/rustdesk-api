@@ -12,6 +12,7 @@ import (
 	"github.com/lejianwen/rustdesk-api/v2/model/custom_types"
 	"github.com/lejianwen/rustdesk-api/v2/service"
 	"gorm.io/gorm"
+	"strconv"
 )
 
 type ProcessMonitor struct{}
@@ -37,14 +38,26 @@ func (c *ProcessMonitor) RuleList(ctx *gin.Context) {
 	for _, r := range rules {
 		ro := ruleOut{ProcessMonitorRule: r, Peers: []peerOut{}}
 		if r.SourceType == "device_group" || r.SourceType == "ab_tags" {
-			var peers []model.ProcessMonitorRulePeer
-			service.DB.Where("rule_id = ?", r.RowId).Find(&peers)
-			for _, p := range peers {
-				ov := map[string]interface{}{}
-				if len(p.Overrides) > 0 {
-					_ = json.Unmarshal(p.Overrides, &ov)
+			// 成员关系动态解析：直接反映设备当前所属设备组 / 地址簿标签，
+			// 不再依赖创建时写入 ProcessMonitorRulePeer 的静态快照
+			var gid uint
+			var tags []string
+			if r.SourceType == "device_group" {
+				if g, err := strconv.ParseUint(r.SourceId, 10, 64); err == nil {
+					gid = uint(g)
 				}
-				ro.Peers = append(ro.Peers, peerOut{RowId: p.RowId, PeerId: p.PeerId, Overrides: ov})
+			} else {
+				tags = strings.Split(r.SourceId, ",")
+			}
+			peerIds := c.resolvePeerIds(ctx, r.SourceType, nil, gid, tags)
+			for _, pid := range peerIds {
+				var rp model.ProcessMonitorRulePeer
+				service.DB.Where("rule_id = ? AND peer_id = ?", r.RowId, pid).First(&rp)
+				ov := map[string]interface{}{}
+				if rp.RowId > 0 && len(rp.Overrides) > 0 {
+					_ = json.Unmarshal(rp.Overrides, &ov)
+				}
+				ro.Peers = append(ro.Peers, peerOut{RowId: rp.RowId, PeerId: pid, Overrides: ov})
 			}
 		}
 		out = append(out, ro)

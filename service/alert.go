@@ -9,8 +9,10 @@ import (
 
 // peerNotifyRecord 每个 peer 的通知记录（用于 NotifiedPeers JSON 字段）
 type peerNotifyRecord struct {
-	Count    int   `json:"c"` // 当天通知次数
-	LastTime int64 `json:"t"` // 最后通知时间戳
+	Count     int   `json:"c"` // 当天通知次数
+	LastTime  int64 `json:"t"` // 最后通知时间戳
+	Weight    int   `json:"w"` // 离线权重：每 5 分钟检测一次，离线则 +1
+	WeightDay int   `json:"d"` // 权重所属日期（YYYYMMDD），用于每日重置
 }
 
 // parseNotifiedPeers 兼容解析新旧两种格式的 NotifiedPeers
@@ -44,19 +46,27 @@ func isSameDay(a, b int64) bool {
 	return ta.Year() == tb.Year() && ta.YearDay() == tb.YearDay()
 }
 
+// dayKey 返回本地日期的整数表示（YYYYMMDD），用于每日重置权重与连续天数计算
+func dayKey(t int64) int {
+	tm := time.Unix(t, 0)
+	return tm.Year()*10000 + int(tm.Month())*100 + tm.Day()
+}
+
 const (
-	maxNotifyPerDay = 3   // 同一设备每天最多通知次数
-	notifyCooldown  = 600 // 单个 peer 最短通知间隔（秒），避免短时间内重复触发
+	maxNotifyPerDay        = 3                // 同一设备每天最多通知次数
+	notifyCooldown         = 600              // 单个 peer 最短通知间隔（秒），避免短时间内重复触发
+	offlineWeightThreshold = 10               // 离线权重达到该值才触发告警（10 次 × 5 分钟 = 50 分钟）
+	checkInterval          = 5 * time.Minute // 离线检测间隔
 )
 
 type AlertService struct{}
 
 func (s *AlertService) StartChecker() {
 	AllService.AlertService = s
-		go func() {
+	go func() {
 		for {
 			s.checkOfflineDevices()
-			time.Sleep(30 * time.Minute)
+			time.Sleep(checkInterval)
 		}
 	}()
 	Logger.Info("Alert checker started")
@@ -140,9 +150,10 @@ func (s *AlertService) checkOfflineDevices() {
 	}
 
 	now := time.Now().Unix()
+	today := dayKey(now)
+	prevDay := dayKey(now - 86400)
 
-	// 按用户分组处理：每个用户的告警配置各自独立
-	// key=userId, value=用户的station配置（若存在）
+	// 按用户分组处理：每个用户的站内消息配置（若存在）
 	userStationCfg := make(map[uint]*model.AlertConfig)
 	for i := range configs {
 		if configs[i].Channel == "station" {
@@ -161,106 +172,160 @@ func (s *AlertService) checkOfflineDevices() {
 
 		peerIds, monitorAll := s.getMonitoredPeerIds(&cfg)
 
-		// 如果该配置有过离线通知记录，检查是否有设备重新上线
-		// 有则重置 last_notified_at，下次离线可立即通知
-		if cfg.LastNotifiedAt > 0 {
-			var onlineCount int64
-			onlineQuery := DB.Model(&model.Peer{}).Where("last_online_time > ?", now-300)
-			if !monitorAll && len(peerIds) > 0 {
-				onlineQuery = onlineQuery.Where("id in (?)", peerIds)
-			}
-			onlineQuery.Count(&onlineCount)
-			if onlineCount > 0 {
-				DB.Model(&model.AlertConfig{}).Where("row_id = ?", cfg.RowId).Update("last_notified_at", 0)
-				cfg.LastNotifiedAt = 0
-			}
-		}
-
-		var offlinePeers []model.Peer
-		// 查询离线设备：最近1小时内离线且超过阈值
-		// 策略2：连续3天以上离线的不再通知（已由 last_online_time > 1h 隐式覆盖）
-		oneHourAgo := now - 3600
-		query := DB.Where("last_online_time > ? AND last_online_time < ?", oneHourAgo, now-threshold)
+		// 加载被监控设备的在线信息
+		var peers []model.Peer
+		q := DB.Select("id, last_online_time, hostname, alias")
 		if !monitorAll && len(peerIds) > 0 {
-			query = query.Where("id in (?)", peerIds)
+			q = q.Where("id in (?)", peerIds)
 		} else if !monitorAll {
 			continue
 		}
-		query.Limit(10).Find(&offlinePeers)
-
-		if len(offlinePeers) == 0 {
+		q.Find(&peers)
+		if len(peers) == 0 {
 			continue
 		}
 
-		// 解析 NotifiedPeers
 		notifiedMap := parseNotifiedPeers(cfg.NotifiedPeers)
 
-		// 筛选出可以通知的 peer（排除已达到每天上限或冷却期内的）
-		var newOfflinePeers []model.Peer
-		for _, peer := range offlinePeers {
-			rec, exists := notifiedMap[peer.Id]
-			if exists {
-				// 策略1：同一天已通知3次，当天不再通知
-				if isSameDay(rec.LastTime, now) && rec.Count >= maxNotifyPerDay {
-					continue
+		// 重新上线检测：任意被监控设备近期上线，则重置“连续3天离线”限制
+		for _, peer := range peers {
+			if peer.LastOnlineTime > now-300 {
+				if cfg.ConsecutiveTriggerDays != 0 || cfg.LastTriggerDay != 0 {
+					cfg.ConsecutiveTriggerDays = 0
+					cfg.LastTriggerDay = 0
 				}
-				// 最短冷却间隔：10分钟内不重复通知同一设备
-				if now-rec.LastTime < notifyCooldown {
-					continue
-				}
+				break
 			}
-			newOfflinePeers = append(newOfflinePeers, peer)
 		}
 
-		if len(newOfflinePeers) == 0 {
+		// 更新离线权重：每 5 分钟检测一次，离线则 +1；每日 / 上线重置
+		type candidate struct {
+			peer   model.Peer
+			weight int
+		}
+		var candidates []candidate
+		for _, peer := range peers {
+			rec, ok := notifiedMap[peer.Id]
+			if !ok {
+				rec = &peerNotifyRecord{}
+			}
+			// 每日重置权重
+			if rec.WeightDay != today {
+				rec.Weight = 0
+				rec.WeightDay = today
+			}
+			switch {
+			case peer.LastOnlineTime > now-300:
+				// 已上线：重置权重
+				rec.Weight = 0
+				rec.WeightDay = today
+			case peer.LastOnlineTime < now-threshold:
+				// 离线（超过阈值时长）：权重 +1
+				rec.Weight++
+			default:
+				// 刚离线但尚未超过阈值：不计入权重
+				rec.Weight = 0
+				rec.WeightDay = today
+			}
+			notifiedMap[peer.Id] = rec
+			if rec.Weight >= offlineWeightThreshold {
+				candidates = append(candidates, candidate{peer: peer, weight: rec.Weight})
+			}
+		}
+
+		// 筛选可通知的设备（排除当天已达上限或冷却期内的）
+		var alertPeers []candidate
+		for _, c := range candidates {
+			rec := notifiedMap[c.peer.Id]
+			if isSameDay(rec.LastTime, now) && rec.Count >= maxNotifyPerDay {
+				continue
+			}
+			if now-rec.LastTime < notifyCooldown {
+				continue
+			}
+			alertPeers = append(alertPeers, c)
+		}
+
+		// 连续 3 天以上触发则不再推送邮件告警
+		if cfg.ConsecutiveTriggerDays >= 3 {
+			Logger.Infof("alert config %d: consecutive offline trigger days >= 3, skip email push", cfg.RowId)
+			s.persistAlertCfg(cfg.RowId, notifiedMap, cfg.LastNotifiedAt, cfg.ConsecutiveTriggerDays, cfg.LastTriggerDay)
 			continue
 		}
-		// 配置级别兜底：1小时内已发过批次通知则跳过
-		if now-cfg.LastNotifiedAt < 3600 {
+
+		if len(alertPeers) == 0 {
+			s.persistAlertCfg(cfg.RowId, notifiedMap, cfg.LastNotifiedAt, cfg.ConsecutiveTriggerDays, cfg.LastTriggerDay)
 			continue
 		}
-		for _, peer := range newOfflinePeers {
-				hostname := peer.Hostname
-				if hostname == "" {
-					hostname = peer.Id
-				}
-				alias := peer.Alias
-				if alias == "" {
-					alias = hostname
-				}
-				lastOnline := time.Unix(peer.LastOnlineTime, 0).Format("2006-01-02 15:04:05")
-				title := "设备离线告警"
-				content := fmt.Sprintf("设备：%s\n别名：%s\nID：%s\n离线时长：%d 分钟\n最后在线：%s",
-					hostname, alias, peer.Id, cfg.OfflineMin, lastOnline)
 
-				// 发送外部渠道通知
-				AllService.NotifyService.SendByConfig(&cfg, title, content)
-
-				// 该用户是否有站内消息配置？有则发站内消息
-				if stationCfg, ok := userStationCfg[cfg.UserId]; ok && stationCfg != nil {
-					AllService.NotifyService.SendStationMessage(cfg.UserId, title, content, peer.Id)
-				}
-
-				// 更新该 peer 的通知记录
-				rec, exists := notifiedMap[peer.Id]
-				if exists && isSameDay(rec.LastTime, now) {
-					rec.Count++
-					rec.LastTime = now
-				} else {
-					notifiedMap[peer.Id] = &peerNotifyRecord{Count: 1, LastTime: now}
-				}
+		pushedAny := false
+		for _, c := range alertPeers {
+			peer := c.peer
+			hostname := peer.Hostname
+			if hostname == "" {
+				hostname = peer.Id
 			}
-			// 清理非今天的记录，避免 map 无限增长
-			for k, v := range notifiedMap {
-				if !isSameDay(v.LastTime, now) {
-					delete(notifiedMap, k)
-				}
+			alias := peer.Alias
+			if alias == "" {
+				alias = hostname
 			}
-			// 持久化 NotifiedPeers
-			encoded, _ := json.Marshal(notifiedMap)
-			DB.Model(&model.AlertConfig{}).Where("row_id = ?", cfg.RowId).Updates(map[string]interface{}{
-				"last_notified_at": now,
-				"notified_peers":   string(encoded),
-			})
+			lastOnline := time.Unix(peer.LastOnlineTime, 0).Format("2006-01-02 15:04:05")
+			title := "设备离线告警"
+			content := fmt.Sprintf("设备：%s\n别名：%s\nID：%s\n离线时长：%d 分钟\n最后在线：%s\n离线权重：%d",
+				hostname, alias, peer.Id, cfg.OfflineMin, lastOnline, c.weight)
+
+			// 发送外部渠道通知（邮件等）
+			AllService.NotifyService.SendByConfig(&cfg, title, content)
+
+			// 该用户是否有站内消息配置？有则发站内消息
+			if stationCfg, ok := userStationCfg[cfg.UserId]; ok && stationCfg != nil {
+				AllService.NotifyService.SendStationMessage(cfg.UserId, title, content, peer.Id)
+			}
+
+			// 更新该 peer 的通知记录
+			rec := notifiedMap[peer.Id]
+			if isSameDay(rec.LastTime, now) {
+				rec.Count++
+				rec.LastTime = now
+			} else {
+				rec.Count = 1
+				rec.LastTime = now
+			}
+			notifiedMap[peer.Id] = rec
+			pushedAny = true
+		}
+
+		// 清理非今天的记录（以权重所属日期为准），避免 map 无限增长，
+		// 同时保留当天仍在累积权重的离线设备记录
+		for k, v := range notifiedMap {
+			if v.WeightDay != today {
+				delete(notifiedMap, k)
+			}
+		}
+
+		// 更新连续触发天数（每个自然日只计一次）
+		if pushedAny {
+			if cfg.LastTriggerDay == today {
+				// 当日已统计，不重复累计
+			} else if cfg.LastTriggerDay == prevDay {
+				cfg.ConsecutiveTriggerDays++
+			} else {
+				cfg.ConsecutiveTriggerDays = 1
+			}
+			cfg.LastTriggerDay = today
+		}
+
+		s.persistAlertCfg(cfg.RowId, notifiedMap, now, cfg.ConsecutiveTriggerDays, cfg.LastTriggerDay)
 	}
+}
+
+// persistAlertCfg 持久化告警配置的运行状态（通知记录、连续触发天数等）
+func (s *AlertService) persistAlertCfg(rowId uint, notifiedMap map[string]*peerNotifyRecord, lastNotifiedAt int64, consecutive int, lastTriggerDay int) {
+	encoded, _ := json.Marshal(notifiedMap)
+	DB.Model(&model.AlertConfig{}).Where("row_id = ?", rowId).Updates(map[string]interface{}{
+		"last_notified_at":         lastNotifiedAt,
+		"notified_peers":           string(encoded),
+		"consecutive_trigger_days": consecutive,
+		"last_trigger_day":         lastTriggerDay,
+	})
 }
