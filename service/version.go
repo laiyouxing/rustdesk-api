@@ -20,6 +20,7 @@ func (s *AppReleaseService) Latest(platform string) *model.AppRelease {
 			"macos":   {"macos", "mac"},
 			"mac":     {"mac", "macos"},
 			"windows": {"windows"},
+			"android": {"android"},
 		}
 		platforms, ok := aliasMap[platform]
 		if !ok {

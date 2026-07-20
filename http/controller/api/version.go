@@ -15,7 +15,7 @@ type Version struct {
 // @Description 客户端调用该接口检查是否有新版本
 // @Accept  json
 // @Produce  json
-// @Param platform query string false "平台: windows/macos/linux/ubuntu"
+// @Param platform query string false "平台: windows/macos/linux/ubuntu/android"
 // @Success 200 {object} response.Response
 // @Failure 500 {object} response.Response
 // @Router /api/version/latest [get]
