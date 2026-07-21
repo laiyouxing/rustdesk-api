@@ -60,6 +60,7 @@ func Init(g *gin.Engine) {
 	DeviceGroupBind(adg)
 	BackupBind(adg)
 	ProcessMonitorBind(adg)
+	InvitationBind(adg)
 	//访问静态文件
 	//g.StaticFS("/upload", http.Dir(global.Config.Gin.ResourcesPath+"/upload"))
 }
@@ -466,4 +467,13 @@ func ProcessMonitorBind(adg *gin.RouterGroup) {
 	rg.POST("/rule/delete", cont.RuleDelete)
 	rg.GET("/status", cont.StatusList)
 	rg.GET("/peer_sources", cont.PeerSources)
+}
+
+func InvitationBind(adg *gin.RouterGroup) {
+	cont := &admin.Invitation{}
+	rg := adg.Group("/invitation").Use(middleware.AdminPrivilege())
+	rg.GET("/list", cont.List)
+	rg.POST("/create", cont.Create)
+	rg.POST("/delete", cont.Delete)
+	rg.GET("/info", cont.Info)
 }

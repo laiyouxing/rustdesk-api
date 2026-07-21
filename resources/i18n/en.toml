@@ -218,3 +218,23 @@ other = "Cannot delete a department that has sub-departments."
 description = "Department has members."
 one = "Cannot delete a department that has members."
 other = "Cannot delete a department that has members."
+
+[AccountExpired]
+description = "Account expired."
+one = "Account has expired, please contact the administrator."
+other = "Account has expired, please contact the administrator."
+
+[InviteCodeRequired]
+description = "Invite code required."
+one = "Invite code required to register."
+other = "Invite code required to register."
+
+[InviteCodeInvalid]
+description = "Invite code invalid."
+one = "Invite code is invalid or expired."
+other = "Invite code is invalid or expired."
+
+[UserDisabled]
+description = "User disabled."
+one = "User has been disabled."
+other = "User has been disabled."

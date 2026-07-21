@@ -3,13 +3,14 @@ package admin
 import "github.com/lejianwen/rustdesk-api/v2/model"
 
 type LoginPayload struct {
-	Username   string   `json:"username"`
-	Email      string   `json:"email"`
-	Avatar     string   `json:"avatar"`
-	Token      string   `json:"token"`
-	RouteNames []string `json:"route_names"`
-	Nickname   string   `json:"nickname"`
-	MfaEnabled bool     `json:"mfa_enabled"`
+	Username      string   `json:"username"`
+	Email         string   `json:"email"`
+	Avatar        string   `json:"avatar"`
+	Token         string   `json:"token"`
+	RouteNames    []string `json:"route_names"`
+	Nickname      string   `json:"nickname"`
+	MfaEnabled    bool     `json:"mfa_enabled"`
+	AccountExpired bool    `json:"account_expired"`
 }
 
 func (lp *LoginPayload) FromUser(user *model.User) {

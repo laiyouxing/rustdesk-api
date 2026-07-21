@@ -471,6 +471,20 @@ func (ct *User) Register(c *gin.Context) {
 		response.Fail(c, 101, errList[0])
 		return
 	}
+
+	// 邀请码验证：当开启了邀请模式时，必须提供有效邀请码
+	invSvc := service.NewInvitationService()
+	if global.Config.App.InviteOnly {
+		if f.InviteCode == "" {
+			response.Fail(c, 101, response.TranslateMsg(c, "InviteCodeRequired"))
+			return
+		}
+		if !invSvc.Validate(f.InviteCode) {
+			response.Fail(c, 101, response.TranslateMsg(c, "InviteCodeInvalid"))
+			return
+		}
+	}
+
 	regStatus := model.StatusCode(global.Config.App.RegisterStatus)
 	// 注册状态可能未配置，默认启用
 	if regStatus != model.COMMON_STATUS_DISABLED && regStatus != model.COMMON_STATUS_ENABLE {
@@ -482,6 +496,14 @@ func (ct *User) Register(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed"))
 		return
 	}
+
+	// 注册成功后消耗邀请码
+	if global.Config.App.InviteOnly && f.InviteCode != "" {
+		if err := invSvc.Use(f.InviteCode); err != nil {
+			global.Log.Warnf("use invitation code failed: %v", err)
+		}
+	}
+
 	if regStatus == model.COMMON_STATUS_DISABLED {
 		// 需要管理员审核
 		response.Fail(c, 101, response.TranslateMsg(c, "RegisterSuccessWaitAdminConfirm"))

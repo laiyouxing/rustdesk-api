@@ -181,6 +181,11 @@ func (us *UserService) CheckUserEnable(u *model.User) bool {
 	return u.Status == model.COMMON_STATUS_ENABLE
 }
 
+// IsUserExpired 判断用户是否已过期
+func (us *UserService) IsUserExpired(u *model.User) bool {
+	return u.ExpiredAt > 0 && u.ExpiredAt < time.Now().Unix()
+}
+
 // Create 创建
 func (us *UserService) Create(u *model.User) error {
 	// The initial username should be formatted, and the username should be unique

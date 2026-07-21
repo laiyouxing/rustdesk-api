@@ -505,6 +505,7 @@ func Migrate(version uint) {
 		&model.ProcessMonitorRulePeer{},
 		&model.ProcessMonitorStatus{},
 		&model.ServerStatusMonitor{},
+		&model.Invitation{},
 	)
 	if err != nil {
 		global.Logger.Error("migrate err :=>", err)

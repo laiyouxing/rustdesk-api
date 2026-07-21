@@ -25,6 +25,7 @@ type App struct {
 	BanThreshold       int           `mapstructure:"ban-threshold"`
 	BanWindowMinutes   int           `mapstructure:"ban-window-minutes"`
 	BanDurationMinutes int           `mapstructure:"ban-duration-minutes"`
+	InviteOnly         bool          `mapstructure:"invite-only"`
 }
 type Admin struct {
 	Title           string `mapstructure:"title"`

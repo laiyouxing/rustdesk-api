@@ -220,3 +220,23 @@ other = "该部门下存在子部门，无法删除。"
 description = "部门存在成员。"
 one = "该部门下存在成员，无法删除。"
 other = "该部门下存在成员，无法删除。"
+
+[AccountExpired]
+description = "Account expired."
+one = "账户已过期，请联系管理员。"
+other = "账户已过期，请联系管理员。"
+
+[InviteCodeRequired]
+description = "Invite code required."
+one = "需要提供邀请码才能注册。"
+other = "需要提供邀请码才能注册。"
+
+[InviteCodeInvalid]
+description = "Invite code invalid."
+one = "邀请码无效或已过期。"
+other = "邀请码无效或已过期。"
+
+[UserDisabled]
+description = "User disabled."
+one = "用户已被禁用。"
+other = "用户已被禁用。"

@@ -11,6 +11,7 @@ app:
   token-expire: 2h # Web Admin 登录态过期时间（查 DB expired_at，此值即为实际寿命）
   web-sso: true #web auth sso
   disable-pwd-login: false #禁用密码登录
+  invite-only: false # true: 仅通过邀请码注册, false: 开放注册(需 register: true)
 
 admin:
   title: "RustDesk API Admin"

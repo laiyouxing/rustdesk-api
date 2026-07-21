@@ -5,16 +5,17 @@ import (
 )
 
 type UserForm struct {
-	Id       uint   `json:"id"`
-	Username string `json:"username" validate:"required,gte=2,lte=32"`
-	Email    string `json:"email"` //validate:"required,email" email不强制
+	Id        uint   `json:"id"`
+	Username  string `json:"username" validate:"required,gte=2,lte=32"`
+	Email     string `json:"email"` //validate:"required,email" email不强制
 	//Password string           `json:"password" validate:"required,gte=4,lte=20"`
-	Nickname string           `json:"nickname"`
-	Avatar   string           `json:"avatar"`
-	GroupId  uint             `json:"group_id" validate:"required"`
-	IsAdmin  *bool            `json:"is_admin" `
-	Status   model.StatusCode `json:"status" validate:"required,gte=0"`
-	Remark   string           `json:"remark"`
+	Nickname  string           `json:"nickname"`
+	Avatar    string           `json:"avatar"`
+	GroupId   uint             `json:"group_id" validate:"required"`
+	IsAdmin   *bool            `json:"is_admin" `
+	Status    model.StatusCode `json:"status" validate:"required,gte=0"`
+	Remark    string           `json:"remark"`
+	ExpiredAt int64            `json:"expired_at"`
 }
 
 func (uf *UserForm) FromUser(user *model.User) *UserForm {
@@ -27,6 +28,7 @@ func (uf *UserForm) FromUser(user *model.User) *UserForm {
 	uf.IsAdmin = user.IsAdmin
 	uf.Status = user.Status
 	uf.Remark = user.Remark
+	uf.ExpiredAt = user.ExpiredAt
 	return uf
 }
 func (uf *UserForm) ToUser() *model.User {
@@ -40,6 +42,7 @@ func (uf *UserForm) ToUser() *model.User {
 	user.IsAdmin = uf.IsAdmin
 	user.Status = uf.Status
 	user.Remark = uf.Remark
+	user.ExpiredAt = uf.ExpiredAt
 	return user
 }
 
@@ -87,8 +90,20 @@ type RegisterForm struct {
 	Email           string `json:"email"` // validate:"required,email"
 	Password        string `json:"password" validate:"required,gte=4,lte=32"`
 	ConfirmPassword string `json:"confirm_password" validate:"required,gte=4,lte=32"`
+	InviteCode      string `json:"invite_code"`
 }
 
 type UserTokenBatchDeleteForm struct {
 	Ids []uint `json:"ids" validate:"required"`
+}
+
+type InvitationForm struct {
+	Code      string `json:"code"`
+	MaxUsers  int    `json:"max_users"`
+	ExpiredAt int64  `json:"expired_at"`
+	Remark    string `json:"remark"`
+}
+
+type InvitationDeleteForm struct {
+	Id uint `json:"id" validate:"required"`
 }
