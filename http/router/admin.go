@@ -73,7 +73,7 @@ func DashboardBind(adg *gin.RouterGroup) {
 
 func AlertChannelBind(adg *gin.RouterGroup) {
 	cont := &admin.AlertChannel{}
-	rg := adg.Group("/alert_channel")
+	rg := adg.Group("/alert_channel").Use(middleware.AdminPrivilege())
 	rg.GET("/list", cont.List)
 	rg.GET("/all", cont.AllList)
 	rg.POST("/create", cont.Create)
@@ -84,7 +84,7 @@ func AlertChannelBind(adg *gin.RouterGroup) {
 
 func AlertConfigBind(adg *gin.RouterGroup) {
 	cont := &admin.AlertConfig{}
-	rg := adg.Group("/alert_config")
+	rg := adg.Group("/alert_config").Use(middleware.AdminPrivilege())
 	rg.GET("/list", cont.List)
 	rg.POST("/create", cont.Create)
 	rg.POST("/update", cont.Update)

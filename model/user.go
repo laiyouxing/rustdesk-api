@@ -36,6 +36,6 @@ type UserList struct {
 
 var UserRouteNames = []string{
 	"MyTagList", "MyAddressBookList", "MyInfo", "MyAddressBookCollection", "MyPeer", "MyShareRecordList", "MyLoginLog",
-	"AlertConfig", "StationMessages", "HomePage",
+	"StationMessages", "HomePage",
 }
 var AdminRouteNames = []string{"*"}

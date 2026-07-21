@@ -12,8 +12,7 @@ type AlertConfig struct{}
 
 func (c *AlertConfig) List(ctx *gin.Context) {
 	var configs []model.AlertConfig
-	u := service.AllService.UserService.CurUser(ctx)
-	service.DB.Where("user_id = ?", u.Id).Find(&configs)
+	service.DB.Find(&configs)
 	response.Success(ctx, gin.H{"list": configs})
 }
 
@@ -27,8 +26,7 @@ func (c *AlertConfig) Create(ctx *gin.Context) {
 		response.Fail(ctx, 101, "请选择通知通道")
 		return
 	}
-	u := service.AllService.UserService.CurUser(ctx)
-	f.UserId = u.Id
+	f.UserId = 0 // 0 表示管理员共享
 	// 从通道获取 channel 类型
 	ch := &model.AlertChannel{}
 	service.DB.Where("row_id = ?", f.ChannelId).First(ch)
@@ -52,7 +50,6 @@ func (c *AlertConfig) Update(ctx *gin.Context) {
 		response.Fail(ctx, 101, "参数错误")
 		return
 	}
-	u := service.AllService.UserService.CurUser(ctx)
 	// 如果更新了 channel_id，同步更新 channel 名称
 	if f.ChannelId > 0 {
 		ch := &model.AlertChannel{}
@@ -62,7 +59,7 @@ func (c *AlertConfig) Update(ctx *gin.Context) {
 			f.Name = ch.Name
 		}
 	}
-	if err := service.DB.Model(&model.AlertConfig{}).Where("row_id = ? AND user_id = ?", f.RowId, u.Id).Updates(f).Error; err != nil {
+	if err := service.DB.Model(&model.AlertConfig{}).Where("row_id = ?", f.RowId).Updates(f).Error; err != nil {
 		global.Logger.Error("AlertConfig Update failed: ", err)
 		response.Fail(ctx, 500, "保存失败："+err.Error())
 		return
@@ -78,10 +75,9 @@ func (c *AlertConfig) Delete(ctx *gin.Context) {
 		response.Fail(ctx, 101, "ID不能为空")
 		return
 	}
-	u := service.AllService.UserService.CurUser(ctx)
-	// 先确认记录存在且属于当前用户
+	// 先确认记录存在
 	var cfg model.AlertConfig
-	service.DB.Where("row_id = ? AND user_id = ?", form.Id, u.Id).First(&cfg)
+	service.DB.Where("row_id = ?", form.Id).First(&cfg)
 	if cfg.RowId == 0 {
 		response.Fail(ctx, 101, "记录不存在")
 		return

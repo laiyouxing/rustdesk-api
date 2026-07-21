@@ -28,11 +28,10 @@ type peerOut struct {
 	Overrides map[string]interface{} `json:"overrides"`
 }
 
-// RuleList 列出当前用户配置的监控规则，集合规则附带关联的设备与覆盖配置
+// RuleList 列出所有管理员共享的监控规则，集合规则附带关联的设备与覆盖配置
 func (c *ProcessMonitor) RuleList(ctx *gin.Context) {
-	u := service.AllService.UserService.CurUser(ctx)
 	var rules []model.ProcessMonitorRule
-	service.DB.Where("user_id = ?", u.Id).Order("source_type, created_at desc").Find(&rules)
+	service.DB.Order("source_type, created_at desc").Find(&rules)
 
 	out := make([]ruleOut, 0, len(rules))
 	for _, r := range rules {
@@ -81,8 +80,7 @@ func (c *ProcessMonitor) RuleCreate(ctx *gin.Context) {
 	if f.DownThreshold <= 0 {
 		f.DownThreshold = 300
 	}
-	u := service.AllService.UserService.CurUser(ctx)
-	f.UserId = u.Id
+	f.UserId = 0 // 0 表示管理员共享
 	f.SourceType = "peers"
 	f.SourceId = f.PeerId
 	if err := service.DB.Create(f).Error; err != nil {
@@ -109,9 +107,8 @@ func (c *ProcessMonitor) RuleUpdate(ctx *gin.Context) {
 		response.Fail(ctx, 101, "参数错误")
 		return
 	}
-	u := service.AllService.UserService.CurUser(ctx)
 	var existing model.ProcessMonitorRule
-	service.DB.Where("row_id = ? AND user_id = ?", f.RowId, u.Id).First(&existing)
+	service.DB.Where("row_id = ?", f.RowId).First(&existing)
 	if existing.RowId == 0 {
 		response.Fail(ctx, 101, "规则不存在")
 		return
@@ -167,8 +164,7 @@ func (c *ProcessMonitor) RuleDelete(ctx *gin.Context) {
 		response.Fail(ctx, 101, "ID不能为空")
 		return
 	}
-	u := service.AllService.UserService.CurUser(ctx)
-	service.DB.Where("row_id = ? AND user_id = ?", form.Id, u.Id).Delete(&model.ProcessMonitorRule{})
+	service.DB.Where("row_id = ?", form.Id).Delete(&model.ProcessMonitorRule{})
 	service.DB.Where("rule_id = ?", form.Id).Delete(&model.ProcessMonitorRulePeer{})
 	service.DB.Where("rule_id = ?", form.Id).Delete(&model.ProcessMonitorStatus{})
 	response.Success(ctx, nil)
@@ -337,7 +333,6 @@ func (c *ProcessMonitor) RuleBatchCreate(ctx *gin.Context) {
 		form.DownThreshold = 300
 	}
 
-	u := service.AllService.UserService.CurUser(ctx)
 	var sourceId string
 	if form.SourceType == "device_group" {
 		if form.GroupId == 0 {
@@ -362,8 +357,8 @@ func (c *ProcessMonitor) RuleBatchCreate(ctx *gin.Context) {
 	}
 
 	var rule model.ProcessMonitorRule
-	service.DB.Where("user_id = ? AND source_type = ? AND source_id = ? AND type = ? AND target = ?",
-		u.Id, form.SourceType, sourceId, form.Type, form.Target).First(&rule)
+	service.DB.Where("source_type = ? AND source_id = ? AND type = ? AND target = ?",
+		form.SourceType, sourceId, form.Type, form.Target).First(&rule)
 
 	if rule.RowId > 0 {
 		// 已存在同集合规则，更新父规则并追加新设备
@@ -408,7 +403,7 @@ func (c *ProcessMonitor) RuleBatchCreate(ctx *gin.Context) {
 
 	// 新建集合规则
 	rule = model.ProcessMonitorRule{
-		UserId:        u.Id,
+		UserId:        0, // 0 表示管理员共享
 		SourceType:    form.SourceType,
 		SourceId:      sourceId,
 		SourceName:    c.resolveSourceName(form.SourceType, sourceId, form.GroupId, form.Tags),

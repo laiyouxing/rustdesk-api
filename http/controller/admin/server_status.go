@@ -26,22 +26,20 @@ type ServerStatus struct {
 // @Router /server_status [get]
 // @Security token
 func (ct *ServerStatus) Status(c *gin.Context) {
-	u := service.AllService.UserService.CurUser(c)
-	results := service.AllService.ServerStatusService.ProbeAll(u.Id)
+	results := service.AllService.ServerStatusService.ProbeAll()
 	response.Success(c, gin.H{
 		"list":       results,
 		"hbbr_stats": hbbrStats(),
 	})
 }
 
-// List 列出当前用户的服务器探测条目
+// List 列出所有管理员共享的服务器探测条目
 func (ct *ServerStatus) List(c *gin.Context) {
-	u := service.AllService.UserService.CurUser(c)
-	list := service.AllService.ServerStatusService.ListByUser(u.Id)
+	list := service.AllService.ServerStatusService.ListAll()
 	response.Success(c, gin.H{"list": list})
 }
 
-// Create 新建服务器探测条目
+// Create 新建服务器探测条目（管理员共享）
 func (ct *ServerStatus) Create(c *gin.Context) {
 	f := &model.ServerStatusMonitor{}
 	if err := c.ShouldBindJSON(f); err != nil || f.Host == "" || f.Name == "" {
@@ -57,8 +55,7 @@ func (ct *ServerStatus) Create(c *gin.Context) {
 	if f.Enabled != 0 {
 		f.Enabled = 1
 	}
-	u := service.AllService.UserService.CurUser(c)
-	f.UserId = u.Id
+	f.UserId = 0 // 0 表示管理员共享
 	if err := service.AllService.ServerStatusService.Create(f); err != nil {
 		response.Fail(c, 500, "保存失败："+err.Error())
 		return
@@ -66,7 +63,7 @@ func (ct *ServerStatus) Create(c *gin.Context) {
 	response.Success(c, f)
 }
 
-// Update 更新服务器探测条目
+// Update 更新服务器探测条目（管理员共享）
 func (ct *ServerStatus) Update(c *gin.Context) {
 	f := &model.ServerStatusMonitor{}
 	if err := c.ShouldBindJSON(f); err != nil || f.RowId == 0 {
@@ -82,15 +79,14 @@ func (ct *ServerStatus) Update(c *gin.Context) {
 	if f.Enabled != 0 {
 		f.Enabled = 1
 	}
-	u := service.AllService.UserService.CurUser(c)
-	if err := service.AllService.ServerStatusService.Update(f, u.Id); err != nil {
+	if err := service.AllService.ServerStatusService.Update(f); err != nil {
 		response.Fail(c, 500, "保存失败："+err.Error())
 		return
 	}
 	response.Success(c, nil)
 }
 
-// Delete 删除服务器探测条目
+// Delete 删除服务器探测条目（管理员共享）
 func (ct *ServerStatus) Delete(c *gin.Context) {
 	form := &struct {
 		Id uint `json:"id"`
@@ -99,8 +95,7 @@ func (ct *ServerStatus) Delete(c *gin.Context) {
 		response.Fail(c, 101, "ID不能为空")
 		return
 	}
-	u := service.AllService.UserService.CurUser(c)
-	service.AllService.ServerStatusService.Delete(form.Id, u.Id)
+	service.AllService.ServerStatusService.Delete(form.Id)
 	response.Success(c, nil)
 }
 

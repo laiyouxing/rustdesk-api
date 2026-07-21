@@ -11,24 +11,21 @@ import (
 type AlertChannel struct{}
 
 func (ct *AlertChannel) List(c *gin.Context) {
-	u := service.AllService.UserService.CurUser(c)
 	page, pageSize := parsePageParams(c)
 	var total int64
 	var list []model.AlertChannel
-	query := service.DB.Model(&model.AlertChannel{}).Where("user_id = ?", u.Id)
+	query := service.DB.Model(&model.AlertChannel{})
 	query.Count(&total)
 	query.Order("row_id desc").Scopes(service.Paginate(page, pageSize)).Find(&list)
 	response.Success(c, gin.H{"list": list, "total": total})
 }
 
 func (ct *AlertChannel) Create(c *gin.Context) {
-	u := service.AllService.UserService.CurUser(c)
 	f := &model.AlertChannel{}
 	if err := c.ShouldBindJSON(f); err != nil {
 		response.Fail(c, 101, "参数错误")
 		return
 	}
-	f.UserId = u.Id
 	if f.Name == "" {
 		response.Fail(c, 101, "请输入通道名称")
 		return
@@ -42,14 +39,13 @@ func (ct *AlertChannel) Create(c *gin.Context) {
 }
 
 func (ct *AlertChannel) Update(c *gin.Context) {
-	u := service.AllService.UserService.CurUser(c)
 	f := &model.AlertChannel{}
 	if err := c.ShouldBindJSON(f); err != nil || f.RowId == 0 {
 		response.Fail(c, 101, "参数错误")
 		return
 	}
 	old := &model.AlertChannel{}
-	service.DB.Where("row_id = ? AND user_id = ?", f.RowId, u.Id).First(old)
+	service.DB.Where("row_id = ?", f.RowId).First(old)
 	if old.RowId == 0 {
 		response.Fail(c, 101, "记录不存在")
 		return
@@ -66,7 +62,6 @@ func (ct *AlertChannel) Update(c *gin.Context) {
 }
 
 func (ct *AlertChannel) Delete(c *gin.Context) {
-	u := service.AllService.UserService.CurUser(c)
 	f := &struct {
 		Id uint `json:"id"`
 	}{}
@@ -76,28 +71,26 @@ func (ct *AlertChannel) Delete(c *gin.Context) {
 	}
 	// 检查是否有告警规则在使用此通道
 	var usage int64
-	service.DB.Model(&model.AlertConfig{}).Where("channel_id = ? AND user_id = ?", f.Id, u.Id).Count(&usage)
+	service.DB.Model(&model.AlertConfig{}).Where("channel_id = ?", f.Id).Count(&usage)
 	if usage > 0 {
 		response.Fail(c, 101, "该通道正在被告警规则使用，无法删除")
 		return
 	}
 	ch := &model.AlertChannel{}
-	service.DB.Where("row_id = ? AND user_id = ?", f.Id, u.Id).Delete(ch)
+	service.DB.Where("row_id = ?", f.Id).Delete(ch)
 	response.Success(c, nil)
 }
 
-// AllList 返回用户所有通道（不分页），供选择器使用
+// AllList 返回所有通道（不分页），供选择器使用
 func (ct *AlertChannel) AllList(c *gin.Context) {
-	u := service.AllService.UserService.CurUser(c)
 	var list []model.AlertChannel
-	service.DB.Where("user_id = ?", u.Id).Order("id desc").Find(&list)
+	service.DB.Order("id desc").Find(&list)
 	response.Success(c, gin.H{"list": list})
 }
 
 // Test 测试发送一条消息到指定通道，用于验证通道配置是否正确
 // 请求体：AlertChannel 各字段（name/channel/webhook_url/smtp_*），可选 row_id 与 test_recipients
 func (ct *AlertChannel) Test(c *gin.Context) {
-	u := service.AllService.UserService.CurUser(c)
 	f := &model.AlertChannel{}
 	if err := c.ShouldBindJSON(f); err != nil {
 		response.Fail(c, 101, "参数错误")
@@ -114,7 +107,7 @@ func (ct *AlertChannel) Test(c *gin.Context) {
 	// 若指定已保存通道且未提供密码，则从数据库补全（列表中的通道密码为空）
 	if f.RowId > 0 && f.SmtpPass == "" {
 		old := &model.AlertChannel{}
-		service.DB.Where("row_id = ? AND user_id = ?", f.RowId, u.Id).First(old)
+		service.DB.Where("row_id = ?", f.RowId).First(old)
 		if old.RowId > 0 {
 			f.SmtpPass = old.SmtpPass
 		}

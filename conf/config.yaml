@@ -14,7 +14,7 @@ app:
   invite-only: false # true: 仅通过邀请码注册, false: 开放注册(需 register: true)
 
 admin:
-  title: "RustDesk API Admin"
+  title: "RustDesk API 管理平台"
   hello-file: "./conf/admin/hello.html"  #优先使用file
   hello: ""
   # ID Server and Relay Server ports https://github.com/lejianwen/rustdesk-api/issues/257

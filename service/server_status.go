@@ -10,10 +10,10 @@ import (
 
 type ServerStatusService struct{}
 
-// ListByUser 返回某用户启用中的服务器探测条目
-func (s *ServerStatusService) ListByUser(uid uint) []model.ServerStatusMonitor {
+// ListAll 返回所有管理员共享的服务器探测条目
+func (s *ServerStatusService) ListAll() []model.ServerStatusMonitor {
 	var list []model.ServerStatusMonitor
-	DB.Where("user_id = ? AND enabled = ?", uid, 1).Order("row_id").Find(&list)
+	DB.Where("enabled = ?", 1).Order("row_id").Find(&list)
 	return list
 }
 
@@ -21,7 +21,7 @@ func (s *ServerStatusService) Create(m *model.ServerStatusMonitor) error {
 	return DB.Create(m).Error
 }
 
-func (s *ServerStatusService) Update(m *model.ServerStatusMonitor, uid uint) error {
+func (s *ServerStatusService) Update(m *model.ServerStatusMonitor) error {
 	updates := map[string]interface{}{
 		"name":     m.Name,
 		"host":     m.Host,
@@ -29,11 +29,11 @@ func (s *ServerStatusService) Update(m *model.ServerStatusMonitor, uid uint) err
 		"protocol": m.Protocol,
 		"enabled":  m.Enabled,
 	}
-	return DB.Model(&model.ServerStatusMonitor{}).Where("row_id = ? AND user_id = ?", m.RowId, uid).Updates(updates).Error
+	return DB.Model(&model.ServerStatusMonitor{}).Where("row_id = ?", m.RowId).Updates(updates).Error
 }
 
-func (s *ServerStatusService) Delete(id, uid uint) error {
-	DB.Where("row_id = ? AND user_id = ?", id, uid).Delete(&model.ServerStatusMonitor{})
+func (s *ServerStatusService) Delete(id uint) error {
+	DB.Where("row_id = ?", id).Delete(&model.ServerStatusMonitor{})
 	return nil
 }
 
@@ -69,9 +69,9 @@ func (s *ServerStatusService) Probe(m model.ServerStatusMonitor) ProbeResult {
 	return res
 }
 
-// ProbeAll 探测某用户所有启用中的条目
-func (s *ServerStatusService) ProbeAll(uid uint) []ProbeResult {
-	list := s.ListByUser(uid)
+// ProbeAll 探测所有启用中的条目（管理员共享）
+func (s *ServerStatusService) ProbeAll() []ProbeResult {
+	list := s.ListAll()
 	results := make([]ProbeResult, 0, len(list))
 	for _, m := range list {
 		results = append(results, s.Probe(m))
