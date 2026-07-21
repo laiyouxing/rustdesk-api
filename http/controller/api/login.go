@@ -68,6 +68,11 @@ func (l *Login) Login(c *gin.Context) {
 		return
 	}
 
+	if service.AllService.UserService.IsUserExpired(u) {
+		response.Error(c, response.TranslateMsg(c, "AccountExpired"))
+		return
+	}
+
 	//根据refer判断是webclient还是app
 	ref := c.GetHeader("referer")
 	if ref != "" {

@@ -26,7 +26,7 @@ func RustAuth() gin.HandlerFunc {
 			uid, err := service.AllService.UserService.VerifyJWT(token)
 			if err == nil && uid > 0 {
 				user := service.AllService.UserService.InfoById(uid)
-				if user.Id > 0 && service.AllService.UserService.CheckUserEnable(user) {
+				if user.Id > 0 && service.AllService.UserService.CheckUserEnable(user) && !service.AllService.UserService.IsUserExpired(user) {
 					c.Set("curUser", user)
 					c.Set("token", token)
 					c.Next()
@@ -44,7 +44,7 @@ func RustAuth() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
-		if !service.AllService.UserService.CheckUserEnable(user) {
+		if !service.AllService.UserService.CheckUserEnable(user) || service.AllService.UserService.IsUserExpired(user) {
 			c.JSON(401, gin.H{
 				"error": "Unauthorized",
 			})

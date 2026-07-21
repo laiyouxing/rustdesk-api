@@ -29,7 +29,7 @@ func ProcessMonitorAuth() gin.HandlerFunc {
 			if len(token) > 0 {
 				if len(global.Jwt.Key) > 0 {
 					if uid, err := service.AllService.UserService.VerifyJWT(token); err == nil && uid > 0 {
-						if user := service.AllService.UserService.InfoById(uid); user.Id > 0 && service.AllService.UserService.CheckUserEnable(user) {
+						if user := service.AllService.UserService.InfoById(uid); user.Id > 0 && service.AllService.UserService.CheckUserEnable(user) && !service.AllService.UserService.IsUserExpired(user) {
 							c.Set("curUser", user)
 							c.Set("token", token)
 							c.Next()
@@ -37,7 +37,7 @@ func ProcessMonitorAuth() gin.HandlerFunc {
 						}
 					}
 				}
-				if user, _ := service.AllService.UserService.InfoByAccessToken(token, ""); user.Id > 0 && service.AllService.UserService.CheckUserEnable(user) {
+				if user, _ := service.AllService.UserService.InfoByAccessToken(token, ""); user.Id > 0 && service.AllService.UserService.CheckUserEnable(user) && !service.AllService.UserService.IsUserExpired(user) {
 					c.Set("curUser", user)
 					c.Set("token", token)
 					c.Next()

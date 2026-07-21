@@ -474,6 +474,7 @@ func (ct *User) Register(c *gin.Context) {
 
 	// 邀请码验证：当开启了邀请模式时，必须提供有效邀请码
 	invSvc := service.NewInvitationService()
+	var userExpiredAt int64
 	if global.Config.App.InviteOnly {
 		if f.InviteCode == "" {
 			response.Fail(c, 101, response.TranslateMsg(c, "InviteCodeRequired"))
@@ -483,6 +484,10 @@ func (ct *User) Register(c *gin.Context) {
 			response.Fail(c, 101, response.TranslateMsg(c, "InviteCodeInvalid"))
 			return
 		}
+		// 读取邀请码绑定的用户过期时间
+		if inv := invSvc.InfoByCode(f.InviteCode); inv.Id > 0 {
+			userExpiredAt = inv.UserExpiredAt
+		}
 	}
 
 	regStatus := model.StatusCode(global.Config.App.RegisterStatus)
@@ -491,7 +496,7 @@ func (ct *User) Register(c *gin.Context) {
 		regStatus = model.COMMON_STATUS_ENABLE
 	}
 
-	u := service.AllService.UserService.Register(f.Username, f.Email, f.Password, regStatus)
+	u := service.AllService.UserService.Register(f.Username, f.Email, f.Password, regStatus, userExpiredAt)
 	if u == nil || u.Id == 0 {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed"))
 		return

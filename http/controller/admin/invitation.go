@@ -57,9 +57,10 @@ func (ct *Invitation) Create(c *gin.Context) {
 		return
 	}
 	inv := &model.Invitation{
-		MaxUsers:  1, // 强制只能使用一次
-		ExpiredAt: f.ExpiredAt,
-		Remark:    f.Remark,
+		MaxUsers:      1, // 强制只能使用一次
+		ExpiredAt:     f.ExpiredAt,
+		UserExpiredAt: f.UserExpiredAt,
+		Remark:        f.Remark,
 	}
 	if f.ExpiredAt == 0 {
 		inv.ExpiredAt = time.Now().Unix() + 86400 // 默认1天过期

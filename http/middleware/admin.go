@@ -33,7 +33,7 @@ func BackendUserAuth() gin.HandlerFunc {
 			return
 		}
 
-		if !service.AllService.UserService.CheckUserEnable(user) {
+		if !service.AllService.UserService.CheckUserEnable(user) || service.AllService.UserService.IsUserExpired(user) {
 			c.JSON(401, gin.H{
 				"error": "Unauthorized",
 			})
