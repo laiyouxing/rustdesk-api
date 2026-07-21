@@ -422,6 +422,7 @@ func DatabaseAutoUpdate() {
 		&model.ProcessMonitorRulePeer{},
 		&model.ProcessMonitorStatus{},
 		&model.ServerStatusMonitor{},
+		&model.Invitation{},
 	}
 	for _, m := range fallbackModels {
 		if err := db.AutoMigrate(m); err != nil {

@@ -43,6 +43,11 @@ func JwtAuth() gin.HandlerFunc {
 			c.Abort()
 			return
 		}
+		if service.AllService.UserService.IsUserExpired(user) {
+			response.Fail(c, 101, response.TranslateMsg(c, "AccountExpired"))
+			c.Abort()
+			return
+		}
 		c.Set("curUser", user)
 
 		c.Next()
