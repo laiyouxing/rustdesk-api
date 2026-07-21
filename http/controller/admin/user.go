@@ -500,7 +500,7 @@ func (ct *User) Register(c *gin.Context) {
 	// 注册成功后消耗邀请码
 	if global.Config.App.InviteOnly && f.InviteCode != "" {
 		if err := invSvc.Use(f.InviteCode); err != nil {
-			global.Log.Warnf("use invitation code failed: %v", err)
+			global.Logger.Warnf("use invitation code failed: %v", err)
 		}
 	}
 
