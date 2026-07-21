@@ -277,7 +277,8 @@ func (us *UserService) Update(u *model.User) error {
 			return errors.New("The last admin user cannot be disabled or demoted")
 		}
 	}
-	return DB.Model(u).Updates(u).Error
+	// Updates 会跳过零值字段，用 UpdateColumn 确保 expired_at 能被清空为 0
+	return DB.Model(u).Updates(u).UpdateColumn("expired_at", u.ExpiredAt).Error
 }
 
 // FlushToken 清空token
