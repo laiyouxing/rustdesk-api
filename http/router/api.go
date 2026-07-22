@@ -144,6 +144,8 @@ func ApiInit(g *gin.Engine) {
 
 	//访问静态文件
 	g.StaticFS("/upload", http.Dir(global.Config.Gin.ResourcesPath+"/public/upload"))
+	// 码支付收款码图片（resources/static/qr/）
+	g.StaticFS("/static/qr", http.Dir(global.Config.Gin.ResourcesPath+"/static/qr"))
 }
 
 func PersonalRoutes(frg *gin.RouterGroup) {

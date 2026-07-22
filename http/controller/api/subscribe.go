@@ -1,7 +1,9 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
+	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/global"
@@ -12,12 +14,36 @@ import (
 )
 
 // SubscribeController 订阅控制器
-type SubscribeController struct {
-}
+type SubscribeController struct{}
 
 // NewSubscribeController 创建控制器
 func NewSubscribeController() *SubscribeController {
 	return &SubscribeController{}
+}
+
+// getQRURL 根据渠道返回收款二维码 URL
+func (sc *SubscribeController) getQRURL(c *gin.Context, channel string) string {
+	cc := global.Config.Payment.Cashier
+	qrPath := cc.AlipayQR
+	if channel == "wechat" {
+		qrPath = cc.WechatQR
+	}
+	if qrPath == "" {
+		return ""
+	}
+
+	// 已经是 URL，直接返回
+	if len(qrPath) > 4 && qrPath[:4] == "http" {
+		return qrPath
+	}
+
+	// 相对路径：返回完整 URL（基于请求的 host）
+	base := filepath.Base(qrPath)
+	scheme := "http"
+	if c.Request.TLS != nil {
+		scheme = "https"
+	}
+	return fmt.Sprintf("%s://%s/static/qr/%s", scheme, c.Request.Host, base)
 }
 
 // CreateOrder 创建订单
@@ -34,30 +60,31 @@ func (sc *SubscribeController) CreateOrder(c *gin.Context) {
 		return
 	}
 
-	order, err := service.AllService.SubscribeService.CreateOrder(user.Id, req.Channel, req.Plan)
+	order, err := service.AllService.SubscribeService.CreateOrder(user.Id, req.Channel)
 	if err != nil {
 		response.Fail(c, 500, err.Error())
 		return
 	}
 
-	// 默认 600 秒有效期
-	expireSeconds := 600
+	expireSec := global.Config.Payment.OrderExpireSec
+	if expireSec <= 0 {
+		expireSec = 600
+	}
+
 	resp := &respApi.OrderResp{
 		OutTradeNo:    order.OutTradeNo,
-		CashierURL:    order.CashierURL,
-		QRPayload:     order.QRPayload,
 		AmountCents:   order.AmountCents,
 		Plan:          order.Plan,
-		ExpireSeconds: expireSeconds,
+		ExpireSeconds: expireSec,
 		Status:        order.Status,
+		QRPayload:     sc.getQRURL(c, req.Channel),
 		CodeIssued:    false,
 	}
 	response.Success(c, resp)
 }
 
-// Notify 支付平台异步回调（公开接口，不鉴权）
+// Notify 支付回调通知（公开接口，不鉴权）
 func (sc *SubscribeController) Notify(c *gin.Context) {
-	// 收集回调参数（支持 form 和 JSON）
 	params := make(map[string]string)
 	c.Request.ParseForm()
 	for k, v := range c.Request.Form {
@@ -65,12 +92,11 @@ func (sc *SubscribeController) Notify(c *gin.Context) {
 			params[k] = v[0]
 		}
 	}
-	// 如果是 JSON body
 	if len(params) == 0 {
 		body := make(map[string]interface{})
 		if err := c.ShouldBindJSON(&body); err == nil {
 			for k, v := range body {
-				params[k] = toString(v)
+				params[k] = fmt.Sprintf("%v", v)
 			}
 		}
 	}
@@ -107,7 +133,6 @@ func (sc *SubscribeController) QueryOrder(c *gin.Context) {
 		return
 	}
 
-	// 查询是否已生成邀请码
 	ics := &service.InviteCodeService{}
 	ic := ics.InfoByOrderID(outTradeNo)
 	codeIssued := ic != nil && ic.Id > 0
@@ -179,13 +204,13 @@ func (sc *SubscribeController) Redeem(c *gin.Context) {
 	if err != nil {
 		errMsg := err.Error()
 		switch {
-		case contains(errMsg, "CODE_NOT_FOUND"):
+		case contains(errMsg, "code not found"):
 			response.Fail(c, 4201, response.TranslateMsg(c, "CodeNotFound"))
-		case contains(errMsg, "CODE_USED"):
+		case contains(errMsg, "code already used"):
 			response.Fail(c, 4202, response.TranslateMsg(c, "CodeUsed"))
-		case contains(errMsg, "CODE_REVOKED"):
+		case contains(errMsg, "code revoked"):
 			response.Fail(c, 4203, response.TranslateMsg(c, "CodeRevoked"))
-		case contains(errMsg, "CODE_EXPIRED"):
+		case contains(errMsg, "code expired"):
 			response.Fail(c, 4204, response.TranslateMsg(c, "CodeExpired"))
 		default:
 			response.Fail(c, 500, errMsg)
@@ -193,12 +218,11 @@ func (sc *SubscribeController) Redeem(c *gin.Context) {
 		return
 	}
 
-	// 重新查询用户以获取最新的订阅过期时间
 	user = service.AllService.UserService.InfoById(user.Id)
 	resp := &respApi.RedeemResp{
-		Plan:                  ic.Plan,
-		ExpireAt:              ic.ExpireAt,
-		SubscriptionExpireAt:  user.SubscriptionExpireAt,
+		Plan:                 ic.Plan,
+		ExpireAt:             ic.ExpireAt,
+		SubscriptionExpireAt: user.SubscriptionExpireAt,
 	}
 	response.Success(c, resp)
 }
@@ -232,17 +256,6 @@ func (sc *SubscribeController) Mine(c *gin.Context) {
 		IsExpiringSoon:       isExpiringSoon,
 	}
 	response.Success(c, resp)
-}
-
-// toString 将 interface{} 转为 string
-func toString(v interface{}) string {
-	if v == nil {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return ""
 }
 
 func contains(s, substr string) bool {

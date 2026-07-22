@@ -71,21 +71,19 @@ cors:
   # 留空（[]）表示关闭跨域：任何跨域请求都不会得到 Access-Control-Allow-Origin，浏览器将拦截响应。
   # 注意：此处仅控制响应头，不会影响同源的管理后台/WebClient（同源请求不需要 CORS）。
   allow-origins: []
-# 支付平台配置（通用验签，配置驱动）
-# 以下为 码支付/易支付 等通用配置示例，字段名依实际平台调整。
-# 签名算法：md5 / sha256 / hmac-sha256
+# 码支付配置（自我实现，无外部平台依赖）
 payment:
-  merchant_id: "your_merchant_id"
-  secret: "your_secret_key"
-  notify_url: "http://127.0.0.1:21114/api/v1/subscribe/notify"
-  sign_algo: "md5"
-  sign_field: "sign"
-  timestamp_field: "timestamp"
-  replay_window_sec: 300
-  success_keyword: "success"
-  out_trade_no_field: "out_trade_no"
-  trade_status_field: "trade_status"
-  paid_status_value: "TRADE_SUCCESS"
+  enable: true                              # 是否启用码支付
+  secret_key: "CHANGE-ME-your-secret-key"   # 签名密钥（回调通知验签用）
+  notify_url: "http://127.0.0.1:21114/api/subscribe/notify"  # 回调地址
+  order_expire_sec: 600                     # 订单未支付自动关闭（秒）
+
+  # 收银台展示
+  cashier:
+    site_name: "RustDesk 订阅"
+    alipay_qr: "static/qr/alipay.png"       # 支付宝收款码
+    wechat_qr: "static/qr/wechat.png"       # 微信收款码
+    monitor_tip: "扫码付款后等待几秒，系统会自动检测到账并激活订阅"
 
 # 订阅套餐配置
 subscription:

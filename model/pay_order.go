@@ -15,9 +15,11 @@ type PayOrder struct {
 	AmountCents int64 `json:"amount_cents"`
 	// Channel 支付渠道：wechat / alipay
 	Channel string `gorm:"size:16" json:"channel"`
+	// PeriodDays 订阅周期天数
+	PeriodDays int `json:"period_days"`
 	// Status 订单状态：pending / paid / failed / closed
 	Status string `gorm:"size:16;index;default:'pending'" json:"status"`
-	// CashierURL 收银台链接（前端据此生成二维码）
+	// CashierURL 收银台链接
 	CashierURL string `gorm:"size:512" json:"cashier_url"`
 	// QRPayload 可选：后端直出二维码内容
 	QRPayload string `gorm:"size:512" json:"qr_payload"`

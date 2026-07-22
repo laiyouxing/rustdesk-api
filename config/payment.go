@@ -1,29 +1,30 @@
 package config
 
-// PaymentConfig 支付平台配置（通用验签框架，配置驱动，不写死平台）
+// PaymentConfig 码支付配置（自我实现，无外部平台依赖）
 type PaymentConfig struct {
-	// MerchantID 商户号 / 应用 ID
-	MerchantID string `mapstructure:"merchant_id" yaml:"merchant_id"`
-	// Secret 商户密钥（签名密钥）
-	Secret string `mapstructure:"secret" yaml:"secret"`
-	// NotifyURL 异步回调通知地址
+	// Enable 是否启用码支付
+	Enable bool `mapstructure:"enable" yaml:"enable"`
+	// SecretKey 签名密钥（用于回调通知验签）
+	SecretKey string `mapstructure:"secret_key" yaml:"secret_key"`
+	// NotifyURL 异步回调通知地址（支付确认工具调用）
 	NotifyURL string `mapstructure:"notify_url" yaml:"notify_url"`
-	// SignAlgo 签名算法：md5 | sha256 | hmac-sha256
-	SignAlgo string `mapstructure:"sign_algo" yaml:"sign_algo"`
-	// SignField 回调中签名字段名
-	SignField string `mapstructure:"sign_field" yaml:"sign_field"`
-	// TimestampField 回调中时间戳字段名
-	TimestampField string `mapstructure:"timestamp_field" yaml:"timestamp_field"`
-	// ReplayWindowSec 防重放窗口（秒），超出该窗口的请求拒绝
-	ReplayWindowSec int `mapstructure:"replay_window_sec" yaml:"replay_window_sec"`
-	// SuccessKeyword 回调成功时向平台返回的字符串（如 "success" 或 '{"code":"success"}'）
-	SuccessKeyword string `mapstructure:"success_keyword" yaml:"success_keyword"`
-	// OutTradeNoField 回调中订单号字段名
-	OutTradeNoField string `mapstructure:"out_trade_no_field" yaml:"out_trade_no_field"`
-	// TradeStatusField 回调中交易状态字段名
-	TradeStatusField string `mapstructure:"trade_status_field" yaml:"trade_status_field"`
-	// PaidStatusValue 回调中表示已支付的状态值（如 "TRADE_SUCCESS"）
-	PaidStatusValue string `mapstructure:"paid_status_value" yaml:"paid_status_value"`
+	// OrderExpireSec 订单未支付自动关闭时间（秒），默认 600
+	OrderExpireSec int `mapstructure:"order_expire_sec" yaml:"order_expire_sec"`
+
+	// Cashier 收银台展示配置
+	Cashier CashierConfig `mapstructure:"cashier" yaml:"cashier"`
+}
+
+// CashierConfig 收银台展示
+type CashierConfig struct {
+	// SiteName 站点名称，在收银台页面上方显示
+	SiteName string `mapstructure:"site_name" yaml:"site_name"`
+	// AlipayQR 支付宝收款码图片路径（相对 resources/ 或绝对路径）
+	AlipayQR string `mapstructure:"alipay_qr" yaml:"alipay_qr"`
+	// WechatQR 微信收款码图片路径
+	WechatQR string `mapstructure:"wechat_qr" yaml:"wechat_qr"`
+	// MonitorTip 收款确认方式的提示文案
+	MonitorTip string `mapstructure:"monitor_tip" yaml:"monitor_tip"`
 }
 
 // SubscriptionConfig 订阅套餐配置
