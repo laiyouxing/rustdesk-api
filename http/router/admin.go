@@ -64,6 +64,8 @@ func Init(g *gin.Engine) {
 	InvitationBind(adg)
 	SubscribeBind(adg)
 	InviteCodeBind(adg)
+	OrderBind(adg)
+	SubscriptionBind(adg)
 	//访问静态文件
 	//g.StaticFS("/upload", http.Dir(global.Config.Gin.ResourcesPath+"/upload"))
 }
@@ -502,4 +504,22 @@ func InviteCodeBind(adg *gin.RouterGroup) {
 	rg.POST("", cont.Create)
 	rg.POST("/:id/revoke", cont.Revoke)
 	rg.GET("/export", cont.Export)
+}
+
+// OrderBind 后台订单管理（仅管理员）
+func OrderBind(adg *gin.RouterGroup) {
+	cont := &admin.OrderCtl{}
+	rg := adg.Group("/orders").Use(middleware.AdminPrivilege())
+	rg.GET("/list", cont.List)
+	rg.GET("/detail/:id", cont.Detail)
+	rg.POST("/:id/confirm", cont.Confirm)
+	rg.POST("/:id/close", cont.Close)
+}
+
+// SubscriptionBind 后台订阅管理（仅管理员）
+func SubscriptionBind(adg *gin.RouterGroup) {
+	cont := &admin.SubscriptionCtl{}
+	rg := adg.Group("/subscriptions").Use(middleware.AdminPrivilege())
+	rg.GET("/list", cont.List)
+	rg.POST("/extend", cont.Extend)
 }
