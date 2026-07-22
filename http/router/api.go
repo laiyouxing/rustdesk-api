@@ -101,6 +101,7 @@ func ApiInit(g *gin.Engine) {
 		sc := &api.SubscribeController{}
 		frg.POST("/subscribe/notify", sc.Notify)
 		frg.POST("/subscribe/webhook", sc.Webhook)
+		frg.POST("/subscribe/sms-webhook", sc.SmsWebhook)
 		frg.GET("/subscribe/plans", sc.Plans)
 	}
 

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -39,6 +40,23 @@ func (s *SubscribeService) generateOutTradeNo() string {
 func (s *SubscribeService) PayConfig() (secretKey string, expireSec int) {
 	pc := Config.Payment
 	return pc.SecretKey, pc.OrderExpireSec
+}
+
+// ExtractAmountFromSMS 从短信内容中提取支付金额（元）
+// 支持格式: "到账10.00元"、"收款10元"、"到账10.5元"等
+func (s *SubscribeService) ExtractAmountFromSMS(msg string) (string, error) {
+	// 匹配 "到账/收款 + 数字.数字 + 元" 模式
+	re := regexp.MustCompile(`(?:到账|收款|入账|收到)[：:\s]*(\d+\.?\d*)\s*元`)
+	matches := re.FindStringSubmatch(msg)
+	if len(matches) < 2 {
+		return "", fmt.Errorf("cannot extract amount from SMS: %s", msg)
+	}
+	amount := matches[1]
+	// 补全小数位
+	if !strings.Contains(amount, ".") {
+		amount += ".00"
+	}
+	return amount, nil
 }
 
 // MatchOrderByAmount 按金额匹配最近未支付的订单（SmsForwarder 按金额回调用）

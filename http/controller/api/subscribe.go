@@ -181,6 +181,70 @@ func (sc *SubscribeController) Webhook(c *gin.Context) {
 	}
 }
 
+// SmsForwarderReq SmsForwarder 原生 webhook 回调格式
+// 模板: {"pid":"1001","aid":"46","uid":"{{UID}}","title":"{{TITLE}}","msg":"{{MSG}}","time":"{{RECEIVE_TIME}}","divice":"{{DEVICE_NAME}}"}
+type SmsForwarderReq struct {
+	PID    string `json:"pid"`
+	AID    string `json:"aid"`
+	UID    string `json:"uid"`
+	Title  string `json:"title"`  // 发送者，如"支付宝"
+	Msg    string `json:"msg"`    // 内容，如"支付宝到账10.00元"
+	Time   string `json:"time"`
+	Device string `json:"divice"`
+}
+
+// SmsWebhook 接收 SmsForwarder 原生格式回调，自动提取金额匹配订单
+// 配置: URL = http://host/api/subscribe/sms-webhook?secret=你的key
+func (sc *SubscribeController) SmsWebhook(c *gin.Context) {
+	secret := c.Query("secret")
+	sk := global.Config.Payment.SecretKey
+	if sk == "" || secret != sk {
+		global.Logger.Warnf("sms-webhook secret mismatch")
+		c.String(http.StatusOK, "fail")
+		return
+	}
+
+	req := &SmsForwarderReq{}
+	if err := c.ShouldBindJSON(req); err != nil || req.Msg == "" {
+		c.String(http.StatusOK, "fail")
+		return
+	}
+
+	amount, err := service.AllService.SubscribeService.ExtractAmountFromSMS(req.Msg)
+	if err != nil {
+		global.Logger.Warnf("sms-webhook extract amount failed: msg=%q, err=%v", req.Msg, err)
+		c.String(http.StatusOK, "fail")
+		return
+	}
+
+	no, err := service.AllService.SubscribeService.MatchOrderByAmount(amount)
+	if err != nil {
+		global.Logger.Warnf("sms-webhook match failed: amount=%s, msg=%q, err=%v", amount, req.Msg, err)
+		c.String(http.StatusOK, "fail")
+		return
+	}
+
+	params := map[string]string{
+		"out_trade_no": no,
+		"trade_status": "TRADE_SUCCESS",
+		"money":        amount,
+	}
+	params["sign"] = payverify.Sign(params, sk)
+
+	ok, err := service.AllService.SubscribeService.HandleNotify(params)
+	if err != nil {
+		global.Logger.Warnf("sms-webhook notify failed: %v", err)
+		c.String(http.StatusOK, "fail")
+		return
+	}
+	if ok {
+		global.Logger.Infof("sms-webhook success: order=%s, amount=%s, from=%s", no, amount, req.Title)
+		c.String(http.StatusOK, "success")
+	} else {
+		c.String(http.StatusOK, "fail")
+	}
+}
+
 // Notify 支付回调通知（公开接口，不鉴权）
 func (sc *SubscribeController) Notify(c *gin.Context) {
 	params := make(map[string]string)
