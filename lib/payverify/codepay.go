@@ -27,14 +27,16 @@ func Sign(params map[string]string, secret string) string {
 	sort.Strings(keys)
 
 	var sb strings.Builder
-	for i, k := range keys {
+	first := true
+	for _, k := range keys {
 		v := params[k]
 		if v == "" {
 			continue
 		}
-		if i > 0 {
+		if !first {
 			sb.WriteString("&")
 		}
+		first = false
 		sb.WriteString(k)
 		sb.WriteString("=")
 		sb.WriteString(v)

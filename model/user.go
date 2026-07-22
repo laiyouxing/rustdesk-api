@@ -26,10 +26,13 @@ type User struct {
 	TimeModel
 }
 
-// SubscriptionStatus 返回订阅状态：active / expired / none
+// SubscriptionStatus 返回订阅状态：active / expired / none / permanent
 func (u *User) SubscriptionStatus() string {
 	if u.SubscriptionExpireAt == nil {
 		return "none"
+	}
+	if u.SubscriptionExpireAt.Year() >= 9999 {
+		return "permanent"
 	}
 	if u.SubscriptionExpireAt.Before(time.Now()) {
 		return "expired"
@@ -37,15 +40,19 @@ func (u *User) SubscriptionStatus() string {
 	return "active"
 }
 
-// IsSubscriptionActive 订阅是否有效（过期 = false，从未订阅 = false）
+// IsSubscriptionActive 订阅是否有效（永久 = true，过期 = false，从未订阅 = false）
 func (u *User) IsSubscriptionActive() bool {
-	return u.SubscriptionStatus() == "active"
+	status := u.SubscriptionStatus()
+	return status == "active" || status == "permanent"
 }
 
-// SubscriptionDaysLeft 返回订阅剩余天数
+// SubscriptionDaysLeft 返回订阅剩余天数；永久返回 -1
 func (u *User) SubscriptionDaysLeft() int {
 	if u.SubscriptionExpireAt == nil {
 		return 0
+	}
+	if u.SubscriptionExpireAt.Year() >= 9999 {
+		return -1
 	}
 	now := time.Now()
 	if u.SubscriptionExpireAt.Before(now) {

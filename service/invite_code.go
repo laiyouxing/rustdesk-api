@@ -40,6 +40,12 @@ func (s *InviteCodeService) generateCode() string {
 // Generate 生成邀请码并绑定用户（自动发码流程）
 // 如果 orderID 不为空，会在同一事务中绑定
 func (s *InviteCodeService) Generate(plan string, userID uint, boundOrderID string, expireDays int) (*model.InviteCode, error) {
+	return s.GenerateWithDB(s.Db(), plan, userID, boundOrderID, expireDays)
+}
+
+// GenerateWithDB 在指定 DB 连接（可以是事务 tx）上生成邀请码。
+// 在事务回调中必须传 tx，否则 SQLite 会因数据库级排他锁导致 "database is locked" 死锁。
+func (s *InviteCodeService) GenerateWithDB(db *gorm.DB, plan string, userID uint, boundOrderID string, expireDays int) (*model.InviteCode, error) {
 	// 重试最多 10 次以避免唯一索引冲突
 	var code *model.InviteCode
 	for i := 0; i < 10; i++ {
@@ -52,7 +58,7 @@ func (s *InviteCodeService) Generate(plan string, userID uint, boundOrderID stri
 			Status:       "unused",
 			BoundOrderID: boundOrderID,
 		}
-		err := s.Db().Create(code).Error
+		err := db.Create(code).Error
 		if err == nil {
 			return code, nil
 		}

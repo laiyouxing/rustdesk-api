@@ -41,11 +41,13 @@ func (sc *SubscriptionCtl) List(c *gin.Context) {
 	now := time.Now()
 	switch status {
 	case "active":
-		db = db.Where("subscription_expire_at IS NOT NULL AND subscription_expire_at > ?", now)
+		db = db.Where("subscription_expire_at IS NOT NULL AND subscription_expire_at > ? AND subscription_expire_at < ?", now, time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC))
 	case "expired":
 		db = db.Where("subscription_expire_at IS NOT NULL AND subscription_expire_at <= ?", now)
 	case "none":
 		db = db.Where("subscription_expire_at IS NULL")
+	case "permanent":
+		db = db.Where("subscription_expire_at IS NOT NULL AND subscription_expire_at >= ?", time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC))
 	}
 
 	// 关键词搜索
@@ -95,7 +97,7 @@ func (sc *SubscriptionCtl) List(c *gin.Context) {
 type ExtendReq struct {
 	UserID  uint   `json:"user_id" binding:"required"`
 	Plan    string `json:"plan"`     // 套餐标识，缺省 "pro"
-	PlanKey string `json:"plan_key" binding:"required"` // 时长 key：1m / 3m / 6m / 12m
+	PlanKey string `json:"plan_key" binding:"required"` // 时长 key：1m / 3m / 6m / 12m / forever
 }
 
 // Extend 延长用户会员（按月付费）
@@ -110,13 +112,6 @@ func (sc *SubscriptionCtl) Extend(c *gin.Context) {
 		req.Plan = "pro"
 	}
 
-	// 查配置获取 period_days
-	opt := global.Config.Subscription.LookupPlan(req.PlanKey)
-	if opt == nil || opt.PeriodDays <= 0 {
-		response.Fail(c, 400, "invalid plan_key")
-		return
-	}
-
 	user := service.AllService.UserService.InfoById(req.UserID)
 	if user.Id == 0 {
 		response.Fail(c, 404, "user not found")
@@ -124,8 +119,35 @@ func (sc *SubscriptionCtl) Extend(c *gin.Context) {
 	}
 
 	now := time.Now()
-	periodDuration := time.Duration(opt.PeriodDays*24) * time.Hour
 	var newExpire time.Time
+
+	// 永久套餐特殊处理：设为 9999 年
+	if req.PlanKey == "forever" {
+		newExpire = time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
+		if err := global.DB.Model(&model.User{}).Where("id = ?", req.UserID).
+			Updates(map[string]interface{}{
+				"subscription_plan":      req.Plan + "-forever",
+				"subscription_expire_at": &newExpire,
+			}).Error; err != nil {
+			response.Fail(c, 500, err.Error())
+			return
+		}
+		response.Success(c, map[string]interface{}{
+			"user_id":                req.UserID,
+			"plan":                   req.Plan + "-forever",
+			"subscription_expire_at": &newExpire,
+		})
+		return
+	}
+
+	// 查配置获取 period_days
+	opt := global.Config.Subscription.LookupPlan(req.PlanKey)
+	if opt == nil || opt.PeriodDays <= 0 {
+		response.Fail(c, 400, "invalid plan_key")
+		return
+	}
+
+	periodDuration := time.Duration(opt.PeriodDays*24) * time.Hour
 	if user.SubscriptionExpireAt == nil || user.SubscriptionExpireAt.Before(now) {
 		newExpire = now.Add(periodDuration)
 	} else {

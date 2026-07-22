@@ -231,7 +231,7 @@ func (s *SubscribeService) HandleNotify(params map[string]string) (bool, error) 
 		}
 
 		ics := &InviteCodeService{}
-		ic, err := ics.Generate(plan, order.UserID, outTradeNo, periodDays)
+		ic, err := ics.GenerateWithDB(tx, plan, order.UserID, outTradeNo, periodDays)
 		if err != nil {
 			return fmt.Errorf("generate code: %w", err)
 		}

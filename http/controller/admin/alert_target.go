@@ -23,6 +23,10 @@ func (c *AlertTargetCtl) checkAlertOwner(ctx *gin.Context, alertId uint) bool {
 	if !ok || u.Id == 0 {
 		return false
 	}
+	// Admin 可以查看所有告警规则（该路由组受 AdminPrivilege 中间件保护）
+	if u.IsAdmin != nil && *u.IsAdmin {
+		return true
+	}
 	var cfg model.AlertConfig
 	service.DB.Where("row_id = ?", alertId).First(&cfg)
 	if cfg.RowId == 0 {
