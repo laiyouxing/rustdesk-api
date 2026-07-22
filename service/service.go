@@ -32,6 +32,8 @@ type Service struct {
 	*StrategyService
 	*ProcessMonitorService
 	*ServerStatusService
+	*SubscribeService
+	*InviteCodeService
 }
 
 type Dependencies struct {
@@ -57,6 +59,8 @@ func New(c *config.Config, g *gorm.DB, l *log.Logger, j *jwt.Jwt, lo lock.Locker
 	Jwt = j
 	Lock = lo
 	AllService = new(Service)
+	AllService.SubscribeService = NewSubscribeService()
+	AllService.InviteCodeService = NewInviteCodeService()
 	return AllService
 }
 

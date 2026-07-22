@@ -423,6 +423,8 @@ func DatabaseAutoUpdate() {
 		&model.ProcessMonitorStatus{},
 		&model.ServerStatusMonitor{},
 		&model.Invitation{},
+		&model.PayOrder{},
+		&model.InviteCode{},
 	}
 	for _, m := range fallbackModels {
 		if err := db.AutoMigrate(m); err != nil {
@@ -507,6 +509,8 @@ func Migrate(version uint) {
 		&model.ProcessMonitorStatus{},
 		&model.ServerStatusMonitor{},
 		&model.Invitation{},
+		&model.PayOrder{},
+		&model.InviteCode{},
 	)
 	if err != nil {
 		global.Logger.Error("migrate err :=>", err)

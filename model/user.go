@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 type User struct {
 	IdModel
 	Username string `json:"username" gorm:"default:'';not null;uniqueIndex"`
@@ -17,7 +19,43 @@ type User struct {
 	MfaEnabled  bool   `json:"mfa_enabled" gorm:"default:0;not null;"`
 	MfaSecret   string `json:"-" gorm:"default:'';not null;"`
 	MfaRecovery string `json:"-" gorm:"default:'';not null;"`
+	// SubscriptionPlan 订阅套餐标识，空字符串表示未订阅
+	SubscriptionPlan string `json:"subscription_plan" gorm:"size:32;default:''"`
+	// SubscriptionExpireAt 订阅过期时间，为空表示从未订阅过
+	SubscriptionExpireAt *time.Time `json:"subscription_expire_at" gorm:"default:null"`
 	TimeModel
+}
+
+// SubscriptionStatus 返回订阅状态：active / expired / none
+func (u *User) SubscriptionStatus() string {
+	if u.SubscriptionExpireAt == nil {
+		return "none"
+	}
+	if u.SubscriptionExpireAt.Before(time.Now()) {
+		return "expired"
+	}
+	return "active"
+}
+
+// IsSubscriptionActive 订阅是否有效（过期 = false，从未订阅 = false）
+func (u *User) IsSubscriptionActive() bool {
+	return u.SubscriptionStatus() == "active"
+}
+
+// SubscriptionDaysLeft 返回订阅剩余天数
+func (u *User) SubscriptionDaysLeft() int {
+	if u.SubscriptionExpireAt == nil {
+		return 0
+	}
+	now := time.Now()
+	if u.SubscriptionExpireAt.Before(now) {
+		return 0
+	}
+	days := int(u.SubscriptionExpireAt.Sub(now).Hours() / 24)
+	if days < 0 {
+		return 0
+	}
+	return days
 }
 
 // BeforeSave 钩子用于确保 email 字段有合理的默认值
@@ -36,6 +74,6 @@ type UserList struct {
 
 var UserRouteNames = []string{
 	"MyTagList", "MyAddressBookList", "MyInfo", "MyAddressBookCollection", "MyPeer", "MyShareRecordList", "MyLoginLog",
-	"StationMessages", "HomePage",
+	"StationMessages", "HomePage", "MySubscription",
 }
 var AdminRouteNames = []string{"*"}

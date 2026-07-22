@@ -83,6 +83,10 @@ type Config struct {
 	Ldap       Ldap
 	Cors       Cors
 	Server     Server
+	// Payment 支付平台配置
+	Payment PaymentConfig `mapstructure:"payment"`
+	// Subscription 订阅套餐配置
+	Subscription SubscriptionConfig `mapstructure:"subscription"`
 	// MfaTotpSkew 允许 TOTP 校验容忍的时钟漂移周期数（每个周期 30s）。
 	// 标准库 totp.Validate 默认 Skew=1（仅容忍 ±30s）；运维中服务器/客户端时钟偏差
 	// 或用户输入耗时偶发会踩线失败，故默认放宽为 3（±90s）。运维可在 config.yaml 中

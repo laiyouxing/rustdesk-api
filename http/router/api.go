@@ -124,7 +124,23 @@ func ApiInit(g *gin.Engine) {
 
 	PersonalRoutes(frg)
 
+	// 爱发电订阅支付（需登录）
+	{
+		sc := &api.SubscribeController{}
+		frg.POST("/subscribe/create-order", sc.CreateOrder)
+		frg.GET("/subscribe/order/:out_trade_no", sc.QueryOrder)
+		frg.POST("/subscribe/claim", sc.Claim)
+		frg.POST("/subscribe/redeem", sc.Redeem)
+		frg.GET("/subscribe/mine", sc.Mine)
+	}
+
 	// 进程/端口监控路由已移至 RustAuth 之前（见下方），以支持未登录设备上报
+
+	// 订阅支付：公开（回调通知，免签平台调用）
+	{
+		sc := &api.SubscribeController{}
+		frg.POST("/subscribe/notify", sc.Notify)
+	}
 
 	//访问静态文件
 	g.StaticFS("/upload", http.Dir(global.Config.Gin.ResourcesPath+"/public/upload"))

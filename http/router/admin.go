@@ -6,6 +6,7 @@ import (
 	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/http/controller/admin"
 	"github.com/lejianwen/rustdesk-api/v2/http/controller/admin/my"
+	apic "github.com/lejianwen/rustdesk-api/v2/http/controller/api"
 	"github.com/lejianwen/rustdesk-api/v2/http/middleware"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -61,6 +62,8 @@ func Init(g *gin.Engine) {
 	BackupBind(adg)
 	ProcessMonitorBind(adg)
 	InvitationBind(adg)
+	SubscribeBind(adg)
+	InviteCodeBind(adg)
 	//访问静态文件
 	//g.StaticFS("/upload", http.Dir(global.Config.Gin.ResourcesPath+"/upload"))
 }
@@ -477,4 +480,26 @@ func InvitationBind(adg *gin.RouterGroup) {
 	rg.POST("/batchCreate", cont.BatchCreate)
 	rg.POST("/delete", cont.Delete)
 	rg.GET("/info", cont.Info)
+}
+
+// SubscribeBind 订阅用户端 API（需登录，认证 + 订阅豁免）
+func SubscribeBind(adg *gin.RouterGroup) {
+	cont := &apic.SubscribeController{}
+	rg := adg.Group("/subscribe")
+	// 注意：这些路由在 BackendUserAuth() 之后注册，用户已认证
+	rg.POST("/create-order", cont.CreateOrder)
+	rg.GET("/order/:out_trade_no", cont.QueryOrder)
+	rg.POST("/claim", cont.Claim)
+	rg.POST("/redeem", cont.Redeem)
+	rg.GET("/mine", cont.Mine)
+}
+
+// InviteCodeBind 后台邀请码管理（仅管理员）
+func InviteCodeBind(adg *gin.RouterGroup) {
+	cont := &admin.AdminInviteCodeController{}
+	rg := adg.Group("/invite-codes").Use(middleware.AdminPrivilege())
+	rg.GET("", cont.List)
+	rg.POST("", cont.Create)
+	rg.POST("/:id/revoke", cont.Revoke)
+	rg.GET("/export", cont.Export)
 }

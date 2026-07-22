@@ -71,6 +71,29 @@ cors:
   # 留空（[]）表示关闭跨域：任何跨域请求都不会得到 Access-Control-Allow-Origin，浏览器将拦截响应。
   # 注意：此处仅控制响应头，不会影响同源的管理后台/WebClient（同源请求不需要 CORS）。
   allow-origins: []
+# 支付平台配置（通用验签，配置驱动）
+# 以下为 码支付/易支付 等通用配置示例，字段名依实际平台调整。
+# 签名算法：md5 / sha256 / hmac-sha256
+payment:
+  merchant_id: "your_merchant_id"
+  secret: "your_secret_key"
+  notify_url: "http://127.0.0.1:21114/api/v1/subscribe/notify"
+  sign_algo: "md5"
+  sign_field: "sign"
+  timestamp_field: "timestamp"
+  replay_window_sec: 300
+  success_keyword: "success"
+  out_trade_no_field: "out_trade_no"
+  trade_status_field: "trade_status"
+  paid_status_value: "TRADE_SUCCESS"
+
+# 订阅套餐配置
+subscription:
+  plan: "pro"
+  price_cents: 1000        # ¥10.00 / 月 / 用户
+  period_days: 30
+  remind_days: [7, 3, 1]   # 临期提醒天数（前端用）
+
 # TOTP 校验时钟容差（时钟漂移周期数，每个周期 30s；Skew=N 即容忍 ±30s×N）。
 # 标准库默认 Skew=1（±30s）。运维中服务器/客户端时钟偏差或用户输入耗时偶发会踩线失败，
 # 这里默认 3（±90s）作为健壮性加固。取值 <1（含未配置/0）时由 service 回退到 3。
