@@ -97,21 +97,4 @@ type UserTokenBatchDeleteForm struct {
 	Ids []uint `json:"ids" validate:"required"`
 }
 
-type InvitationForm struct {
-	Code          string `json:"code"`
-	MaxUsers      int    `json:"max_users"`
-	ExpiredAt     int64  `json:"expired_at"`      // 邀请码过期时间
-	UserExpiredAt int64  `json:"user_expired_at"` // 该邀请码创建用户的过期时间
-	Remark        string `json:"remark"`
-}
 
-type InvitationDeleteForm struct {
-	Id uint `json:"id" validate:"required"`
-}
-
-type InvitationBatchForm struct {
-	Count         int    `json:"count" validate:"required,min=1,max=200"`
-	ExpiredAt     int64  `json:"expired_at"`
-	UserExpiredAt int64  `json:"user_expired_at"`
-	Remark        string `json:"remark"`
-}

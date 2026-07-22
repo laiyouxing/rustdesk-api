@@ -478,6 +478,7 @@ func SubscribeBind(adg *gin.RouterGroup) {
 	cont := &apic.SubscribeController{}
 	rg := adg.Group("/subscribe")
 	// 注意：这些路由在 BackendUserAuth() 之后注册，用户已认证
+	rg.GET("/plans", cont.Plans)
 	rg.POST("/create-order", cont.CreateOrder)
 	rg.GET("/order/:out_trade_no", cont.QueryOrder)
 	rg.POST("/claim", cont.Claim)

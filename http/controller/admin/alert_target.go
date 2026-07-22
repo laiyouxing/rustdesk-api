@@ -12,7 +12,8 @@ import (
 type AlertTargetCtl struct {
 }
 
-// checkAlertOwner verifies that the alert config with given id belongs to current user.
+// checkAlertOwner verifies that the alert config with given id belongs to current user,
+// or is an admin-shared config (user_id = 0, created from admin panel).
 func (c *AlertTargetCtl) checkAlertOwner(ctx *gin.Context, alertId uint) bool {
 	user, ok := ctx.Get("curUser")
 	if !ok {
@@ -23,8 +24,12 @@ func (c *AlertTargetCtl) checkAlertOwner(ctx *gin.Context, alertId uint) bool {
 		return false
 	}
 	var cfg model.AlertConfig
-	service.DB.Where("row_id = ? AND user_id = ?", alertId, u.Id).First(&cfg)
-	return cfg.RowId > 0
+	service.DB.Where("row_id = ?", alertId).First(&cfg)
+	if cfg.RowId == 0 {
+		return false
+	}
+	// admin-shared (user_id=0) or own
+	return cfg.UserId == 0 || cfg.UserId == u.Id
 }
 
 func (c *AlertTargetCtl) List(ctx *gin.Context) {

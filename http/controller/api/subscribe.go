@@ -22,7 +22,7 @@ func NewSubscribeController() *SubscribeController {
 	return &SubscribeController{}
 }
 
-// getQRURL 根据渠道返回收款二维码 URL
+// getQRURL 根据渠道从配置读取文件名并返回完整 URL
 func (sc *SubscribeController) getQRURL(c *gin.Context, channel string) string {
 	cc := global.Config.Payment.Cashier
 	qrPath := cc.AlipayQR
@@ -33,12 +33,12 @@ func (sc *SubscribeController) getQRURL(c *gin.Context, channel string) string {
 		return ""
 	}
 
-	// 已经是 URL，直接返回
+	// 已经是完整 URL，直接返回
 	if len(qrPath) > 4 && qrPath[:4] == "http" {
 		return qrPath
 	}
 
-	// 相对路径：返回完整 URL（基于请求的 host）
+	// 相对路径：按配置原样构造 URL（文件名和扩展名完全由配置决定）
 	base := filepath.Base(qrPath)
 	scheme := "http"
 	if c.Request.TLS != nil {
