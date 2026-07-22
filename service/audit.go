@@ -201,9 +201,11 @@ func (as *AuditService) closeStaleConnsByHeartbeat() {
 			connHeartbeats.Delete(key)
 			continue
 		}
+		// 同时检查 peer_id（被控端）和 from_peer（控制端）两个方向：
+		// 被控端断开心跳 → 关闭；控制端断开心跳即使被控端还活着，也应关闭。
 		res := DB.Model(&model.AuditConn{}).
 			Where("close_time = 0").
-			Where("peer_id = ? AND conn_id = ?", peerId, connId).
+			Where("(peer_id = ? AND conn_id = ?) OR (from_peer = ? AND conn_id = ?)", peerId, connId, peerId, connId).
 			Update("close_time", now.Unix())
 		if res.Error == nil {
 			closedCount += res.RowsAffected

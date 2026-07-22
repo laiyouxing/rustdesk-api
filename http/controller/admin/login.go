@@ -351,8 +351,14 @@ func setAuthCookie(c *gin.Context, token string, maxAge int) {
 
 // clearAuthCookie 清除会话 Cookie（登出或登录失效时调用）。
 func clearAuthCookie(c *gin.Context) {
+	secure := false
+	if c.Request.TLS != nil {
+		secure = true
+	} else if hp := c.GetHeader("X-Forwarded-Proto"); strings.EqualFold(hp, "https") {
+		secure = true
+	}
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("access_token", "", -1, "/", "", false, true)
+	c.SetCookie("access_token", "", -1, "/", "", secure, true)
 }
 
 func responseLoginSuccess(c *gin.Context, u *model.User, ut *model.UserToken) {

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/http/response"
@@ -26,8 +27,14 @@ func BackendUserAuth() gin.HandlerFunc {
 		user, _ := service.AllService.UserService.InfoByAccessToken(token, fingerprint)
 		if user.Id == 0 {
 			// token 无效、过期或来源不匹配：清除可能残留的 Cookie 并拒绝
+			secure := false
+			if c.Request.TLS != nil {
+				secure = true
+			} else if hp := c.GetHeader("X-Forwarded-Proto"); strings.EqualFold(hp, "https") {
+				secure = true
+			}
 			c.SetSameSite(http.SameSiteLaxMode)
-			c.SetCookie("access_token", "", -1, "/", "", false, true)
+			c.SetCookie("access_token", "", -1, "/", "", secure, true)
 			response.Fail(c, 403, response.TranslateMsg(c, "NeedLogin"))
 			c.Abort()
 			return

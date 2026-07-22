@@ -62,6 +62,11 @@ func (a *Audit) AuditConn(c *gin.Context) {
 			Type:      ac.Type,
 		}
 		service.AllService.AuditService.UpsertByPeerIdAndConnId(up)
+		// 补全更新携带了完整来源信息时，也尝试关闭同 (from_peer, peer_id) 的旧进行中记录。
+		// 解决重连时 "new" 请求缺少 peer 字段导致旧记录未关闭的问题。
+		if ac.FromPeer != "" && ac.PeerId != "" {
+			service.AllService.AuditService.CloseInProgressByFromPeerAndPeer(ac.FromPeer, ac.PeerId)
+		}
 	}
 	response.Success(c, "")
 }
