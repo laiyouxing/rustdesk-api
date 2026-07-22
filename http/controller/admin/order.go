@@ -6,7 +6,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/http/response"
+	"github.com/lejianwen/rustdesk-api/v2/lib/payverify"
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"github.com/lejianwen/rustdesk-api/v2/service"
 )
@@ -141,10 +143,14 @@ func (oc *OrderCtl) Confirm(c *gin.Context) {
 		return
 	}
 
-	// 构造回调参数调 HandleNotify
+	// 构造回调参数调 HandleNotify（带上签名，否则验签失败）
 	params := map[string]string{
 		"out_trade_no": order.OutTradeNo,
 		"trade_status": "TRADE_SUCCESS",
+		"money":        fmt.Sprintf("%.2f", float64(order.AmountCents)/100),
+	}
+	if sk := global.Config.Payment.SecretKey; sk != "" {
+		params["sign"] = payverify.Sign(params, sk)
 	}
 	ok, err := service.AllService.SubscribeService.HandleNotify(params)
 	if err != nil || !ok {
