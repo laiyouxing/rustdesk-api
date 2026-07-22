@@ -27,9 +27,9 @@ func (s *InviteCodeService) Db() *gorm.DB {
 
 const base62Charset = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 
-// generateCode 生成 24 位 base62 随机串
+// generateCode 生成 32 位 base62 随机串
 func (s *InviteCodeService) generateCode() string {
-	b := make([]byte, 24)
+	b := make([]byte, 32)
 	for i := range b {
 		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(base62Charset))))
 		b[i] = base62Charset[n.Int64()]
