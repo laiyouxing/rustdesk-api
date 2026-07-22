@@ -86,12 +86,8 @@ func (s *SubscribeService) MatchOrderByAmount(amount string) (string, error) {
 		return "", fmt.Errorf("invalid amount: %s", amount)
 	}
 
-	// 查最近一条金额匹配 + 未支付的订单（订单过期时间窗口内）
-	expireSec := Config.Payment.OrderExpireSec
-	if expireSec <= 0 {
-		expireSec = 600
-	}
-	since := time.Now().Add(-time.Duration(expireSec) * time.Second)
+	// 金额匹配窗口：仅匹配 5 分钟内创建的未支付订单
+	since := time.Now().Add(-5 * time.Minute)
 
 	order := &model.PayOrder{}
 	err := s.Db().
