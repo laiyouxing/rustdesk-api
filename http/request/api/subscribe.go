@@ -3,6 +3,8 @@ package api
 // CreateOrderReq 创建订单请求
 type CreateOrderReq struct {
 	Channel string `json:"channel" binding:"required,oneof=wechat alipay"` // 支付渠道
+	// PlanKey 时长选项 key（1m / 3m / 6m / 12m），服务端根据 key 查价
+	PlanKey string `json:"plan_key" binding:"required,max=16"`
 }
 
 // ClaimReq 订单号认领请求

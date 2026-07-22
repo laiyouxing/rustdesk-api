@@ -11,6 +11,8 @@ type PayOrder struct {
 	UserID uint `gorm:"index" json:"user_id"`
 	// Plan 套餐标识
 	Plan string `gorm:"size:32;default:'pro'" json:"plan"`
+	// PlanKey 时长选项 key，如 1m / 3m / 6m / 12m
+	PlanKey string `gorm:"size:16" json:"plan_key"`
 	// AmountCents 订单金额（分）
 	AmountCents int64 `json:"amount_cents"`
 	// Channel 支付渠道：wechat / alipay

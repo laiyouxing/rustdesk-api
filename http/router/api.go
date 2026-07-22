@@ -96,10 +96,11 @@ func ApiInit(g *gin.Engine) {
 		frg.GET("/process/config", middleware.ProcessMonitorAuth(), pm.ProcessConfig)
 	}
 
-	// 订阅支付回调（公开，爱发电平台异步回调免 token）
+	// 订阅支付回调（公开）
 	{
 		sc := &api.SubscribeController{}
 		frg.POST("/subscribe/notify", sc.Notify)
+		frg.GET("/subscribe/plans", sc.Plans)
 	}
 
 	frg.Use(middleware.RustAuth())

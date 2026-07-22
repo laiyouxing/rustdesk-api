@@ -9,6 +9,8 @@ type OrderResp struct {
 	QRPayload     string     `json:"qr_payload"`
 	AmountCents   int64      `json:"amount_cents"`
 	Plan          string     `json:"plan"`
+	PlanKey       string     `json:"plan_key"`
+	PeriodDays    int        `json:"period_days"`
 	ExpireSeconds int        `json:"expire_seconds"`
 	Status        string     `json:"status"`
 	PaidAt        *time.Time `json:"paid_at,omitempty"`

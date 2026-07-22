@@ -40,19 +40,21 @@ func (s *SubscribeService) PayConfig() (secretKey string, expireSec int) {
 }
 
 // CreateOrder 创建订阅订单
-// channel: alipay / wechat
-func (s *SubscribeService) CreateOrder(userID uint, channel string) (*model.PayOrder, error) {
+// channel: alipay / wechat, planKey: 1m / 3m / 6m / 12m
+func (s *SubscribeService) CreateOrder(userID uint, channel, planKey string) (*model.PayOrder, error) {
 	if channel != "wechat" && channel != "alipay" {
 		return nil, fmt.Errorf("unsupported channel: %s", channel)
 	}
 
-	priceCents := Config.Subscription.PriceCents
-	if priceCents <= 0 {
-		priceCents = 1000
+	// 查时长选项
+	opt := Config.Subscription.LookupPlan(planKey)
+	if opt == nil {
+		return nil, fmt.Errorf("invalid plan_key: %s", planKey)
 	}
-	periodDays := Config.Subscription.PeriodDays
-	if periodDays <= 0 {
-		periodDays = 30
+	priceCents := opt.PriceCents
+	periodDays := opt.PeriodDays
+	if priceCents <= 0 || periodDays <= 0 {
+		return nil, fmt.Errorf("invalid plan config for key %s", planKey)
 	}
 
 	expireSec := Config.Payment.OrderExpireSec
@@ -64,6 +66,7 @@ func (s *SubscribeService) CreateOrder(userID uint, channel string) (*model.PayO
 		OutTradeNo:  s.generateOutTradeNo(),
 		UserID:      userID,
 		Plan:        Config.Subscription.Plan,
+		PlanKey:     planKey,
 		AmountCents: priceCents,
 		Channel:     channel,
 		Status:      "pending",

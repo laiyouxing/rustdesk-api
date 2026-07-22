@@ -46,6 +46,33 @@ func (sc *SubscribeController) getQRURL(c *gin.Context, channel string) string {
 	return fmt.Sprintf("%s://%s/static/qr/%s", scheme, c.Request.Host, base)
 }
 
+// Plans 返回可选时长列表
+func (sc *SubscribeController) Plans(c *gin.Context) {
+	sc.SubscriptionPlans(c)
+}
+
+// SubscriptionPlans 返回可选时长列表
+func (sc *SubscribeController) SubscriptionPlans(c *gin.Context) {
+	// 不需要注入到 global.Config，直接从 service 读取
+	subCfg := global.Config.Subscription
+	type planItem struct {
+		Key        string `json:"key"`
+		Name       string `json:"name"`
+		PriceCents int64  `json:"price_cents"`
+		PeriodDays int    `json:"period_days"`
+	}
+	var items []planItem
+	for _, p := range subCfg.Plans {
+		items = append(items, planItem{
+			Key:        p.Key,
+			Name:       p.Name,
+			PriceCents: p.PriceCents,
+			PeriodDays: p.PeriodDays,
+		})
+	}
+	response.Success(c, items)
+}
+
 // CreateOrder 创建订单
 func (sc *SubscribeController) CreateOrder(c *gin.Context) {
 	req := &api.CreateOrderReq{}
@@ -60,7 +87,7 @@ func (sc *SubscribeController) CreateOrder(c *gin.Context) {
 		return
 	}
 
-	order, err := service.AllService.SubscribeService.CreateOrder(user.Id, req.Channel)
+	order, err := service.AllService.SubscribeService.CreateOrder(user.Id, req.Channel, req.PlanKey)
 	if err != nil {
 		response.Fail(c, 500, err.Error())
 		return
@@ -75,6 +102,8 @@ func (sc *SubscribeController) CreateOrder(c *gin.Context) {
 		OutTradeNo:    order.OutTradeNo,
 		AmountCents:   order.AmountCents,
 		Plan:          order.Plan,
+		PlanKey:       order.PlanKey,
+		PeriodDays:    order.PeriodDays,
 		ExpireSeconds: expireSec,
 		Status:        order.Status,
 		QRPayload:     sc.getQRURL(c, req.Channel),
@@ -141,6 +170,8 @@ func (sc *SubscribeController) QueryOrder(c *gin.Context) {
 		OutTradeNo:  order.OutTradeNo,
 		Status:      order.Status,
 		Plan:        order.Plan,
+		PlanKey:     order.PlanKey,
+		PeriodDays:  order.PeriodDays,
 		AmountCents: order.AmountCents,
 		PaidAt:      order.PaidAt,
 		CodeIssued:  codeIssued,

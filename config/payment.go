@@ -27,14 +27,41 @@ type CashierConfig struct {
 	MonitorTip string `mapstructure:"monitor_tip" yaml:"monitor_tip"`
 }
 
+// PlanOption 套餐时长选项
+type PlanOption struct {
+	// Key 标识键，前端传此值
+	Key string `mapstructure:"key" yaml:"key"`
+	// Name 显示名称，如"1个月"、"3个月"
+	Name string `mapstructure:"name" yaml:"name"`
+	// PriceCents 价格（分）
+	PriceCents int64 `mapstructure:"price_cents" yaml:"price_cents"`
+	// PeriodDays 订阅周期天数
+	PeriodDays int `mapstructure:"period_days" yaml:"period_days"`
+}
+
 // SubscriptionConfig 订阅套餐配置
 type SubscriptionConfig struct {
 	// Plan 套餐标识
 	Plan string `mapstructure:"plan" yaml:"plan"`
-	// PriceCents 价格（分），如 1000 = ¥10.00
+	// Plans 可选时长列表
+	Plans []PlanOption `mapstructure:"plans" yaml:"plans"`
+	// PriceCents 兼容旧配置，单一定价时使用
 	PriceCents int64 `mapstructure:"price_cents" yaml:"price_cents"`
-	// PeriodDays 订阅周期天数
+	// PeriodDays 兼容旧配置，单一时长时使用
 	PeriodDays int `mapstructure:"period_days" yaml:"period_days"`
 	// RemindDays 临期提醒天数列表（前端用）
 	RemindDays []int `mapstructure:"remind_days" yaml:"remind_days"`
+}
+
+// LookupPlan 按 key 查找 PlanOption，找不到返回 nil
+func (sc *SubscriptionConfig) LookupPlan(key string) *PlanOption {
+	if key == "" && len(sc.Plans) > 0 {
+		return &sc.Plans[0]
+	}
+	for _, p := range sc.Plans {
+		if p.Key == key {
+			return &p
+		}
+	}
+	return nil
 }

@@ -88,8 +88,23 @@ payment:
 # 订阅套餐配置
 subscription:
   plan: "pro"
-  price_cents: 1000        # ¥10.00 / 月 / 用户
-  period_days: 30
+  plans:
+    - key: "1m"
+      name: "1个月"
+      price_cents: 1000
+      period_days: 30
+    - key: "3m"
+      name: "3个月"
+      price_cents: 2800
+      period_days: 90
+    - key: "6m"
+      name: "6个月"
+      price_cents: 5000
+      period_days: 180
+    - key: "12m"
+      name: "12个月"
+      price_cents: 8800
+      period_days: 365
   remind_days: [7, 3, 1]   # 临期提醒天数（前端用）
 
 # TOTP 校验时钟容差（时钟漂移周期数，每个周期 30s；Skew=N 即容忍 ±30s×N）。
