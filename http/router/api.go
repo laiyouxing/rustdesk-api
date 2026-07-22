@@ -106,6 +106,7 @@ func ApiInit(g *gin.Engine) {
 	}
 
 	frg.Use(middleware.RustAuth())
+	frg.Use(middleware.NewSubscriptionGuard().Handle())
 	{
 		u := &api.User{}
 		frg.GET("/user/info", u.Info)
