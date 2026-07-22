@@ -2,6 +2,8 @@ package admin
 
 import (
 	"encoding/base64"
+	"time"
+
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/http/request/admin"
@@ -472,21 +474,28 @@ func (ct *User) Register(c *gin.Context) {
 		return
 	}
 
-	// 邀请码验证：当开启了邀请模式时，必须提供有效邀请码
-	invSvc := service.NewInvitationService()
+	// 授权码验证：当开启了邀请模式时，必须提供有效授权码
+	// 授权码同时控制注册资格 + 订阅激活
 	var userExpiredAt int64
 	if global.Config.App.InviteOnly {
 		if f.InviteCode == "" {
 			response.Fail(c, 101, response.TranslateMsg(c, "InviteCodeRequired"))
 			return
 		}
-		if !invSvc.Validate(f.InviteCode) {
+		// 用 InviteCode（授权码）替代旧的 Invitation
+		ics := &service.InviteCodeService{}
+		ic := ics.InfoByCode(f.InviteCode)
+		if ic == nil || ic.Id == 0 {
 			response.Fail(c, 101, response.TranslateMsg(c, "InviteCodeInvalid"))
 			return
 		}
-		// 读取邀请码绑定的用户过期时间
-		if inv := invSvc.InfoByCode(f.InviteCode); inv.Id > 0 {
-			userExpiredAt = inv.UserExpiredAt
+		if ic.Status != "unused" {
+			response.Fail(c, 101, response.TranslateMsg(c, "InviteCodeInvalid"))
+			return
+		}
+		if ic.ExpireAt.Before(time.Now()) {
+			response.Fail(c, 101, response.TranslateMsg(c, "InviteCodeInvalid"))
+			return
 		}
 	}
 
@@ -502,10 +511,25 @@ func (ct *User) Register(c *gin.Context) {
 		return
 	}
 
-	// 注册成功后消耗邀请码
+	// 注册成功后消耗授权码 + 激活订阅
 	if global.Config.App.InviteOnly && f.InviteCode != "" {
-		if err := invSvc.Use(f.InviteCode); err != nil {
-			global.Logger.Warnf("use invitation code failed: %v", err)
+		ics := &service.InviteCodeService{}
+		ic := ics.InfoByCode(f.InviteCode)
+		if ic != nil && ic.Id > 0 && ic.Status == "unused" {
+			now := time.Now()
+			periodDuration := time.Duration(ic.ExpireDays*24) * time.Hour
+			newExpire := now.Add(periodDuration)
+			// 标记码已用并激活订阅
+			global.DB.Model(ic).Updates(map[string]interface{}{
+				"status":  "used",
+				"used_by": u.Id,
+				"used_at": &now,
+			})
+			global.DB.Model(&model.User{}).Where("id = ?", u.Id).
+				Updates(map[string]interface{}{
+					"subscription_plan":      ic.Plan,
+					"subscription_expire_at": &newExpire,
+				})
 		}
 	}
 

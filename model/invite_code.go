@@ -2,11 +2,10 @@ package model
 
 import "time"
 
-// InviteCode 订阅邀请码（自动发码/认领/手动生成共用）
-// 注意区别于 model.Invitation（用于注册邀请），InviteCode 用于订阅激活。
+// InviteCode 授权码（统一用于注册+订阅激活+续费）
 type InviteCode struct {
 	IdModel
-	// Code 24 位 base62 随机串，唯一索引
+	// Code 32 位 base62 随机串，唯一索引
 	Code string `gorm:"uniqueIndex;size:64" json:"code"`
 	// Plan 可兑换的套餐标识
 	Plan string `gorm:"size:32;default:'pro'" json:"plan"`
@@ -20,6 +19,8 @@ type InviteCode struct {
 	UsedBy uint `gorm:"index;default:0" json:"used_by"`
 	// BoundOrderID 关联的商户订单号
 	BoundOrderID string `gorm:"size:64;index" json:"bound_order_id"`
+	// Remark 管理员备注
+	Remark string `gorm:"size:256" json:"remark"`
 	// UsedAt 使用时间
 	UsedAt *time.Time `json:"used_at"`
 	// RevokedAt 失效时间

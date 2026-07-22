@@ -422,7 +422,6 @@ func DatabaseAutoUpdate() {
 		&model.ProcessMonitorRulePeer{},
 		&model.ProcessMonitorStatus{},
 		&model.ServerStatusMonitor{},
-		&model.Invitation{},
 		&model.PayOrder{},
 		&model.InviteCode{},
 	}
@@ -508,7 +507,6 @@ func Migrate(version uint) {
 		&model.ProcessMonitorRulePeer{},
 		&model.ProcessMonitorStatus{},
 		&model.ServerStatusMonitor{},
-		&model.Invitation{},
 		&model.PayOrder{},
 		&model.InviteCode{},
 	)

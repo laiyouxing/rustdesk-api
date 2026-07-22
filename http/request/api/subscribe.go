@@ -21,4 +21,5 @@ type RedeemReq struct {
 type AdminCreateCodeReq struct {
 	Plan       string `json:"plan"`        // 套餐标识，缺省 "pro"
 	ExpireDays int    `json:"expire_days"` // 有效天数，缺省 30
+	Remark     string `json:"remark"`      // 管理员备注
 }
