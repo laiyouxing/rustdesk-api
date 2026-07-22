@@ -91,14 +91,14 @@ func (sc *SubscriptionCtl) List(c *gin.Context) {
 	})
 }
 
-// ExtendReq 延长订阅请求
+// ExtendReq 延长会员请求
 type ExtendReq struct {
-	UserID     uint   `json:"user_id" binding:"required"`
-	Plan       string `json:"plan"`        // 套餐标识，缺省 "pro"
-	PeriodDays int    `json:"period_days"` // 延长天数
+	UserID  uint   `json:"user_id" binding:"required"`
+	Plan    string `json:"plan"`     // 套餐标识，缺省 "pro"
+	PlanKey string `json:"plan_key" binding:"required"` // 时长 key：1m / 3m / 6m / 12m
 }
 
-// Extend 延长用户订阅
+// Extend 延长用户会员（按月付费）
 func (sc *SubscriptionCtl) Extend(c *gin.Context) {
 	req := &ExtendReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
@@ -106,11 +106,15 @@ func (sc *SubscriptionCtl) Extend(c *gin.Context) {
 		return
 	}
 
-	if req.PeriodDays <= 0 {
-		req.PeriodDays = 30
-	}
 	if req.Plan == "" {
 		req.Plan = "pro"
+	}
+
+	// 查配置获取 period_days
+	opt := global.Config.Subscription.LookupPlan(req.PlanKey)
+	if opt == nil || opt.PeriodDays <= 0 {
+		response.Fail(c, 400, "invalid plan_key")
+		return
 	}
 
 	user := service.AllService.UserService.InfoById(req.UserID)
@@ -120,7 +124,7 @@ func (sc *SubscriptionCtl) Extend(c *gin.Context) {
 	}
 
 	now := time.Now()
-	periodDuration := time.Duration(req.PeriodDays*24) * time.Hour
+	periodDuration := time.Duration(opt.PeriodDays*24) * time.Hour
 	var newExpire time.Time
 	if user.SubscriptionExpireAt == nil || user.SubscriptionExpireAt.Before(now) {
 		newExpire = now.Add(periodDuration)
