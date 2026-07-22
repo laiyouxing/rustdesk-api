@@ -10,6 +10,7 @@ import (
 	"github.com/lejianwen/rustdesk-api/v2/http/request/api"
 	"github.com/lejianwen/rustdesk-api/v2/http/response"
 	respApi "github.com/lejianwen/rustdesk-api/v2/http/response/api"
+	"github.com/lejianwen/rustdesk-api/v2/lib/payverify"
 	"github.com/lejianwen/rustdesk-api/v2/service"
 )
 
@@ -110,6 +111,49 @@ func (sc *SubscribeController) CreateOrder(c *gin.Context) {
 		CodeIssued:    false,
 	}
 	response.Success(c, resp)
+}
+
+// WebhookReq 简单确认 webhook 请求
+type WebhookReq struct {
+	OutTradeNo string `json:"out_trade_no" binding:"required"`
+	Secret     string `json:"secret" binding:"required"`
+}
+
+// Webhook SmsForwarder 等监控工具直接回调接口
+// 无需复杂 MD5 签名，只需 POST 订单号 + secret 即可确认
+func (sc *SubscribeController) Webhook(c *gin.Context) {
+	req := &WebhookReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		c.String(http.StatusOK, "fail")
+		return
+	}
+
+	sk := global.Config.Payment.SecretKey
+	if sk == "" || req.Secret != sk {
+		global.Logger.Warnf("webhook secret mismatch: got %q", req.Secret)
+		c.String(http.StatusOK, "fail")
+		return
+	}
+
+	// 构造带签名的参数传给 HandleNotify（跳过它内部的验签）
+	params := map[string]string{
+		"out_trade_no": req.OutTradeNo,
+		"trade_status": "TRADE_SUCCESS",
+		"money":        "0",
+	}
+	params["sign"] = payverify.Sign(params, sk)
+
+	ok, err := service.AllService.SubscribeService.HandleNotify(params)
+	if err != nil {
+		global.Logger.Warnf("webhook failed: %v", err)
+		c.String(http.StatusOK, "fail")
+		return
+	}
+	if ok {
+		c.String(http.StatusOK, "success")
+	} else {
+		c.String(http.StatusOK, "fail")
+	}
 }
 
 // Notify 支付回调通知（公开接口，不鉴权）
