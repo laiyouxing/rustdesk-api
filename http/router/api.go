@@ -96,6 +96,12 @@ func ApiInit(g *gin.Engine) {
 		frg.GET("/process/config", middleware.ProcessMonitorAuth(), pm.ProcessConfig)
 	}
 
+	// 订阅支付回调（公开，爱发电平台异步回调免 token）
+	{
+		sc := &api.SubscribeController{}
+		frg.POST("/subscribe/notify", sc.Notify)
+	}
+
 	frg.Use(middleware.RustAuth())
 	{
 		u := &api.User{}
@@ -135,12 +141,6 @@ func ApiInit(g *gin.Engine) {
 	}
 
 	// 进程/端口监控路由已移至 RustAuth 之前（见下方），以支持未登录设备上报
-
-	// 订阅支付：公开（回调通知，免签平台调用）
-	{
-		sc := &api.SubscribeController{}
-		frg.POST("/subscribe/notify", sc.Notify)
-	}
 
 	//访问静态文件
 	g.StaticFS("/upload", http.Dir(global.Config.Gin.ResourcesPath+"/public/upload"))
