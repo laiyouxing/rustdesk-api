@@ -511,20 +511,28 @@ func (ct *User) Register(c *gin.Context) {
 		return
 	}
 
-	// 注册成功后消耗授权码 + 激活订阅
+	// 注册成功后消耗授权码 + 激活订阅（原子更新防止并发重复使用）
 	if global.Config.App.InviteOnly && f.InviteCode != "" {
 		ics := &service.InviteCodeService{}
 		ic := ics.InfoByCode(f.InviteCode)
 		if ic != nil && ic.Id > 0 && ic.Status == "unused" {
 			now := time.Now()
+			// 原子更新：只更新 status="unused" 的记录
+			result := global.DB.Model(&model.InviteCode{}).
+				Where("id = ? AND status = ?", ic.Id, "unused").
+				Updates(map[string]interface{}{
+					"status":  "used",
+					"used_by": u.Id,
+					"used_at": &now,
+				})
+			if result.Error != nil || result.RowsAffected == 0 {
+				// 原子更新失败（已被别人使用），删除已创建的用户
+				global.DB.Delete(&model.User{}, u.Id)
+				response.Fail(c, 101, response.TranslateMsg(c, "InviteCodeInvalid"))
+				return
+			}
 			periodDuration := time.Duration(ic.ExpireDays*24) * time.Hour
 			newExpire := now.Add(periodDuration)
-			// 标记码已用并激活订阅
-			global.DB.Model(ic).Updates(map[string]interface{}{
-				"status":  "used",
-				"used_by": u.Id,
-				"used_at": &now,
-			})
 			global.DB.Model(&model.User{}).Where("id = ?", u.Id).
 				Updates(map[string]interface{}{
 					"subscription_plan":      ic.Plan,

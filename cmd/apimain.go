@@ -2,10 +2,13 @@ package main
 
 import (
 	"fmt"
+	"io"
 	nethttp "net/http"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/go-redis/redis/v8"
@@ -231,6 +234,60 @@ func InitGlobal() {
 	})
 	global.LoginLimiter.RegisterProvider(utils.B64StringCaptchaProvider{})
 	DatabaseAutoUpdate()
+	syncQRImages()
+}
+
+// syncQRImages 将配置的收款码图片从绝对路径复制到 resources/static/qr/ 目录下，
+// 以便 getQRURL 构造的 /static/qr/{filename} URL 能正确访问到文件。
+func syncQRImages() {
+	if global.Config.Payment.Cashier.SiteName == "" {
+		return
+	}
+	qrDir := global.Config.Gin.ResourcesPath + "/static/qr"
+	if err := os.MkdirAll(qrDir, 0755); err != nil {
+		global.Logger.Errorf("创建收款码目录失败: %v", err)
+		return
+	}
+
+	cashier := global.Config.Payment.Cashier
+	paths := map[string]string{
+		"支付宝收款码": cashier.AlipayQR,
+		"微信收款码":  cashier.WechatQR,
+	}
+	for name, src := range paths {
+		if src == "" || strings.HasPrefix(src, "http") {
+			continue
+		}
+		if !filepath.IsAbs(src) {
+			continue
+		}
+		dst := qrDir + "/" + filepath.Base(src)
+		if err := copyFile(src, dst); err != nil {
+			global.Logger.Errorf("复制%s图片失败 %s -> %s: %v", name, src, dst, err)
+		} else {
+			global.Logger.Infof("收款码图片已复制: %s -> %s", name, dst)
+		}
+	}
+}
+
+// copyFile 复制文件
+func copyFile(src, dst string) error {
+	s, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer s.Close()
+
+	d, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+
+	if _, err := io.Copy(d, s); err != nil {
+		return err
+	}
+	return d.Sync()
 }
 
 // defaultClockCheckURL 启动时时钟快照使用的参考时间源。

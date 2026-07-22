@@ -102,8 +102,8 @@ payment:
   # 收银台展示
   cashier:
     site_name: "RustDesk 订阅"
-    alipay_qr: "static/qr/alipay.jpg"       # 支付宝收款码
-    wechat_qr: "static/qr/wechat.jpg"       # 微信收款码
+    alipay_qr: "static/qr/test2.jpg"       # 支付宝收款码
+    wechat_qr: "static/qr/test.jpg"       # 微信收款码
     monitor_tip: "扫码付款后等待几秒，系统会自动检测到账并激活订阅"
 
 # 订阅套餐配置

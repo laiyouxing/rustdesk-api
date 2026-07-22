@@ -61,14 +61,37 @@ func (ac *AdminInviteCodeController) List(c *gin.Context) {
 		return
 	}
 
+	// 收集所有使用过授权码的用户ID，批量查用户名
+	userIdSet := make(map[uint]bool)
+	for _, ic := range list {
+		if ic.UsedBy > 0 {
+			userIdSet[ic.UsedBy] = true
+		}
+	}
+	userNameMap := make(map[uint]string)
+	if len(userIdSet) > 0 {
+		us := &service.UserService{}
+		for uid := range userIdSet {
+			u := us.InfoById(uid)
+			if u != nil && u.Id > 0 {
+				userNameMap[uid] = u.Username
+			}
+		}
+	}
+
 	items := make([]respApi.CodeListItem, 0, len(list))
 	for _, ic := range list {
+		usedByName := ""
+		if ic.UsedBy > 0 {
+			usedByName = userNameMap[ic.UsedBy]
+		}
 		items = append(items, respApi.CodeListItem{
 			ID:           ic.Id,
 			Code:         ic.Code,
 			Plan:         ic.Plan,
 			Status:       ic.Status,
 			UsedBy:       ic.UsedBy,
+			UsedByName:   usedByName,
 			ExpireAt:     ic.ExpireAt,
 			BoundOrderID: ic.BoundOrderID,
 			CreatedAt:    ic.CreatedAt,
@@ -153,16 +176,39 @@ func (ac *AdminInviteCodeController) Export(c *gin.Context) {
 	// 写入 BOM 使 Excel 正确识别 UTF-8
 	c.Writer.Write([]byte{0xEF, 0xBB, 0xBF})
 
+	// 批量查用户名
+	userIdSet := make(map[uint]bool)
+	for _, ic := range list {
+		if ic.UsedBy > 0 {
+			userIdSet[ic.UsedBy] = true
+		}
+	}
+	userNameMap := make(map[uint]string)
+	if len(userIdSet) > 0 {
+		us := &service.UserService{}
+		for uid := range userIdSet {
+			u := us.InfoById(uid)
+			if u != nil && u.Id > 0 {
+				userNameMap[uid] = u.Username
+			}
+		}
+	}
+
 	writer := csv.NewWriter(c.Writer)
-	writer.Write([]string{"ID", "Code", "Plan", "Status", "UsedBy", "BoundOrderID", "ExpireAt", "CreatedAt"})
+	writer.Write([]string{"ID", "Code", "Plan", "Status", "UsedBy", "UsedByName", "BoundOrderID", "ExpireAt", "CreatedAt"})
 
 	for _, ic := range list {
+		usedByName := ""
+		if ic.UsedBy > 0 {
+			usedByName = userNameMap[ic.UsedBy]
+		}
 		writer.Write([]string{
 			strconv.Itoa(int(ic.Id)),
 			ic.Code,
 			ic.Plan,
 			ic.Status,
 			strconv.Itoa(int(ic.UsedBy)),
+			usedByName,
 			ic.BoundOrderID,
 			ic.ExpireAt.Format("2006-01-02 15:04:05"),
 			ic.CreatedAt.Format("2006-01-02 15:04:05"),

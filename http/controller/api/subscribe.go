@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/global"
@@ -39,10 +40,19 @@ func (sc *SubscribeController) getQRURL(c *gin.Context, channel string) string {
 	}
 
 	// 相对路径：按配置原样构造 URL（文件名和扩展名完全由配置决定）
+	// 优先使用 rustdesk.api-server 配置作为 base URL（兼容反向代理场景）
 	base := filepath.Base(qrPath)
+	apiServer := strings.TrimRight(global.Config.Rustdesk.ApiServer, "/")
+	if apiServer != "" {
+		return fmt.Sprintf("%s/static/qr/%s", apiServer, base)
+	}
+	// 回退：从请求头构造（TLS 终止代理场景 check X-Forwarded-Proto）
 	scheme := "http"
 	if c.Request.TLS != nil {
 		scheme = "https"
+	}
+	if f := c.Request.Header.Get("X-Forwarded-Proto"); f != "" {
+		scheme = f
 	}
 	return fmt.Sprintf("%s://%s/static/qr/%s", scheme, c.Request.Host, base)
 }

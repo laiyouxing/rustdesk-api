@@ -49,6 +49,7 @@ type CodeListItem struct {
 	Plan         string     `json:"plan"`
 	Status       string     `json:"status"`
 	UsedBy       uint       `json:"used_by"`
+	UsedByName   string     `json:"used_by_name"`
 	ExpireAt     time.Time  `json:"expire_at"`
 	BoundOrderID string     `json:"bound_order_id"`
 	CreatedAt    time.Time  `json:"created_at"`
