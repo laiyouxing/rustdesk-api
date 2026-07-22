@@ -115,12 +115,18 @@ func (sc *SubscribeController) CreateOrder(c *gin.Context) {
 
 // WebhookReq 简单确认 webhook 请求
 type WebhookReq struct {
-	OutTradeNo string `json:"out_trade_no" binding:"required"`
-	Secret     string `json:"secret" binding:"required"`
+	// Secret 预共享密钥（必须等于 config payment.secret_key）
+	Secret string `json:"secret" binding:"required"`
+	// OutTradeNo 可选：直接指定订单号
+	OutTradeNo string `json:"out_trade_no"`
+	// Amount 可选：不传 order_no 时传金额，系统自动匹配最近未支付的订单（元，如 "10.00"）
+	Amount string `json:"amount"`
 }
 
 // Webhook SmsForwarder 等监控工具直接回调接口
-// 无需复杂 MD5 签名，只需 POST 订单号 + secret 即可确认
+// 两种调用方式：
+//   1. 传 order_no → 直接确认该订单
+//   2. 只传 amount → 按金额匹配最近 pending 订单
 func (sc *SubscribeController) Webhook(c *gin.Context) {
 	req := &WebhookReq{}
 	if err := c.ShouldBindJSON(req); err != nil {
@@ -135,9 +141,28 @@ func (sc *SubscribeController) Webhook(c *gin.Context) {
 		return
 	}
 
-	// 构造带签名的参数传给 HandleNotify（跳过它内部的验签）
+	var outTradeNo string
+
+	if req.OutTradeNo != "" {
+		// 方式1: 直接按订单号确认
+		outTradeNo = req.OutTradeNo
+	} else if req.Amount != "" {
+		// 方式2: 按金额匹配
+		no, err := service.AllService.SubscribeService.MatchOrderByAmount(req.Amount)
+		if err != nil {
+			global.Logger.Warnf("webhook match amount %s failed: %v", req.Amount, err)
+			c.String(http.StatusOK, "fail")
+			return
+		}
+		outTradeNo = no
+	} else {
+		c.String(http.StatusOK, "fail")
+		return
+	}
+
+	// 构造带签名的参数传给 HandleNotify
 	params := map[string]string{
-		"out_trade_no": req.OutTradeNo,
+		"out_trade_no": outTradeNo,
 		"trade_status": "TRADE_SUCCESS",
 		"money":        "0",
 	}

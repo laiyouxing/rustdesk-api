@@ -4,6 +4,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/lejianwen/rustdesk-api/v2/lib/payverify"
@@ -37,6 +39,51 @@ func (s *SubscribeService) generateOutTradeNo() string {
 func (s *SubscribeService) PayConfig() (secretKey string, expireSec int) {
 	pc := Config.Payment
 	return pc.SecretKey, pc.OrderExpireSec
+}
+
+// MatchOrderByAmount 按金额匹配最近未支付的订单（SmsForwarder 按金额回调用）
+// amount: 字符串金额，支持 "10.00" 或 "10" 格式
+// 返回匹配到的 out_trade_no
+func (s *SubscribeService) MatchOrderByAmount(amount string) (string, error) {
+	// 解析金额到分
+	amount = strings.TrimSpace(amount)
+	var amountCents int64
+	if idx := strings.Index(amount, "."); idx >= 0 {
+		intPart := amount[:idx]
+		decPart := amount[idx+1:]
+		if len(decPart) > 2 {
+			decPart = decPart[:2]
+		}
+		for len(decPart) < 2 {
+			decPart += "0"
+		}
+		ai, _ := strconv.ParseInt(intPart, 10, 64)
+		ad, _ := strconv.ParseInt(decPart, 10, 64)
+		amountCents = ai*100 + ad
+	} else {
+		ai, _ := strconv.ParseInt(amount, 10, 64)
+		amountCents = ai * 100
+	}
+	if amountCents <= 0 {
+		return "", fmt.Errorf("invalid amount: %s", amount)
+	}
+
+	// 查最近一条金额匹配 + 未支付的订单（订单过期时间窗口内）
+	expireSec := Config.Payment.OrderExpireSec
+	if expireSec <= 0 {
+		expireSec = 600
+	}
+	since := time.Now().Add(-time.Duration(expireSec) * time.Second)
+
+	order := &model.PayOrder{}
+	err := s.Db().
+		Where("amount_cents = ? AND status = 'pending' AND created_at >= ?", amountCents, since).
+		Order("created_at DESC").
+		First(order).Error
+	if err != nil {
+		return "", fmt.Errorf("no pending order matches amount %s", amount)
+	}
+	return order.OutTradeNo, nil
 }
 
 // CreateOrder 创建订阅订单
