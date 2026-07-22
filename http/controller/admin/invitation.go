@@ -76,6 +76,35 @@ func (ct *Invitation) Create(c *gin.Context) {
 	response.Success(c, inv)
 }
 
+// BatchCreate 批量生成邀请码
+// @Tags 邀请码
+// @Summary 批量生成邀请码
+// @Param body body admin.InvitationBatchForm true "批量生成参数"
+// @Router /admin/invitation/batchCreate [post]
+// @Security token
+func (ct *Invitation) BatchCreate(c *gin.Context) {
+	f := &admin.InvitationBatchForm{}
+	if err := c.ShouldBindJSON(f); err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
+		return
+	}
+	errList := global.Validator.ValidStruct(c, f)
+	if len(errList) > 0 {
+		response.Fail(c, 101, errList[0])
+		return
+	}
+	invSvc := service.NewInvitationService()
+	list, err := invSvc.BatchCreate(f.Count, f.ExpiredAt, f.UserExpiredAt, f.Remark)
+	if err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
+		return
+	}
+	response.Success(c, gin.H{
+		"list":  list,
+		"count": len(list),
+	})
+}
+
 // Delete 删除邀请码
 // @Tags 邀请码
 // @Summary 删除邀请码

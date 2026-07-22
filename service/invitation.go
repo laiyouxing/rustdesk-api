@@ -97,6 +97,31 @@ func (is *InvitationService) Use(code string) error {
 	return nil
 }
 
+// BatchCreate 批量生成邀请码
+func (is *InvitationService) BatchCreate(count int, expiredAt, userExpiredAt int64, remark string) ([]*model.Invitation, error) {
+	now := time.Now().Unix()
+	expired := expiredAt
+	if expired == 0 {
+		expired = now + 86400 // 默认 1 天后过期
+	}
+	var invitations []*model.Invitation
+	for i := 0; i < count; i++ {
+		inv := &model.Invitation{
+			Code:          is.generateCode(),
+			MaxUsers:      1, // 强制只能用一次
+			ExpiredAt:     expired,
+			UserExpiredAt: userExpiredAt,
+			Remark:        remark,
+			CreatedAt:     now,
+		}
+		invitations = append(invitations, inv)
+	}
+	if err := is.Db().Create(invitations).Error; err != nil {
+		return nil, err
+	}
+	return invitations, nil
+}
+
 // Delete 删除邀请码
 func (is *InvitationService) Delete(id uint) error {
 	return is.Db().Delete(&model.Invitation{}, id).Error

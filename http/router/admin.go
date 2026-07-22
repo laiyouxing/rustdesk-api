@@ -474,6 +474,7 @@ func InvitationBind(adg *gin.RouterGroup) {
 	rg := adg.Group("/invitation").Use(middleware.AdminPrivilege())
 	rg.GET("/list", cont.List)
 	rg.POST("/create", cont.Create)
+	rg.POST("/batchCreate", cont.BatchCreate)
 	rg.POST("/delete", cont.Delete)
 	rg.GET("/info", cont.Info)
 }
