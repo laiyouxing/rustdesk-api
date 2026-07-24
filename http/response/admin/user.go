@@ -11,6 +11,7 @@ type LoginPayload struct {
 	Nickname      string   `json:"nickname"`
 	MfaEnabled    bool     `json:"mfa_enabled"`
 	AccountExpired bool    `json:"account_expired"`
+	Role          string   `json:"role"`
 }
 
 func (lp *LoginPayload) FromUser(user *model.User) {
@@ -19,6 +20,13 @@ func (lp *LoginPayload) FromUser(user *model.User) {
 	lp.Avatar = user.Avatar
 	lp.Nickname = user.Nickname
 	lp.MfaEnabled = user.MfaEnabled
+	role := "user"
+	if user.Role != "" {
+		role = user.Role
+	} else if user.IsAdmin != nil && *user.IsAdmin {
+		role = "admin"
+	}
+	lp.Role = role
 }
 
 type UserOauthItem struct {

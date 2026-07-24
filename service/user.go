@@ -193,6 +193,10 @@ func (us *UserService) Create(u *model.User) error {
 		return errors.New("UsernameExists")
 	}
 	u.Username = us.formatUsername(u.Username)
+	// 设置默认角色
+	if u.Role == "" {
+		u.Role = "user"
+	}
 	var err error
 	u.Password, err = utils.EncryptPassword(u.Password)
 	if err != nil {
@@ -313,7 +317,17 @@ func (us *UserService) UpdatePassword(u *model.User, password string) error {
 
 // IsAdmin 是否管理员
 func (us *UserService) IsAdmin(u *model.User) bool {
-	return u != nil && *u.IsAdmin
+	if u == nil {
+		return false
+	}
+	if u.Role == "admin" {
+		return true
+	}
+	// 降级兼容旧数据
+	if u.IsAdmin != nil && *u.IsAdmin {
+		return true
+	}
+	return false
 }
 
 // RouteNames
@@ -488,6 +502,18 @@ func (us *UserService) DeleteToken(l *model.UserToken) error {
 	return DB.Delete(l).Error
 }
 
+// MigrateUserRoles 迁移现有用户的 Role 字段（基于旧 IsAdmin 字段）
+func (us *UserService) MigrateUserRoles() {
+	var count int64
+	DB.Model(&model.User{}).Where("role = '' AND is_admin = ?", true).Count(&count)
+	if count > 0 {
+		Logger.Infof("迁移 %d 个旧数据用户角色为管理员", count)
+		DB.Model(&model.User{}).Where("role = '' AND is_admin = ?", true).Update("role", "admin")
+	}
+	// 普通用户：role 为空但 is_admin=false 的也补上
+	DB.Model(&model.User{}).Where("role = '' AND (is_admin = ? OR is_admin IS NULL)", false).Update("role", "user")
+}
+
 // Helper functions, used for formatting username
 func (us *UserService) formatUsername(username string) string {
 	username = strings.ReplaceAll(username, " ", "")
@@ -505,7 +531,7 @@ func (us *UserService) getUserCount() int64 {
 // helper functions, getAdminUserCount
 func (us *UserService) getAdminUserCount() int64 {
 	var count int64
-	DB.Model(&model.User{}).Where("is_admin = ?", true).Count(&count)
+	DB.Model(&model.User{}).Where("role = ? OR is_admin = ?", "admin", true).Count(&count)
 	return count
 }
 

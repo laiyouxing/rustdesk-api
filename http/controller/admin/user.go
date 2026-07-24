@@ -66,6 +66,12 @@ func (ct *User) Create(c *gin.Context) {
 		return
 	}
 	u := f.ToUser()
+	// 兼容旧字段：设置了 is_admin=true 但未传 role 时同步
+	if u.Role == "" && u.IsAdmin != nil && *u.IsAdmin {
+		u.Role = "admin"
+	} else if u.Role == "" {
+		u.Role = "user"
+	}
 	err := service.AllService.UserService.Create(u)
 	if err != nil {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
@@ -134,6 +140,12 @@ func (ct *User) Update(c *gin.Context) {
 		return
 	}
 	u := f.ToUser()
+	// 兼容旧字段：设置了 is_admin=true 但未传 role 时同步
+	if u.Role == "" && u.IsAdmin != nil && *u.IsAdmin {
+		u.Role = "admin"
+	} else if u.Role == "" {
+		u.Role = "user"
+	}
 	err := service.AllService.UserService.Update(u)
 	if err != nil {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())

@@ -63,6 +63,8 @@ func New(c *config.Config, g *gorm.DB, l *log.Logger, j *jwt.Jwt, lo lock.Locker
 	AllService.SubscribeService = NewSubscribeService()
 	AllService.InviteCodeService = NewInviteCodeService()
 	AllService.AnnouncementService = &AnnouncementService{}
+	// 迁移旧数据 role 字段
+	AllService.MigrateUserRoles()
 	return AllService
 }
 

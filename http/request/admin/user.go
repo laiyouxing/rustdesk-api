@@ -12,6 +12,7 @@ type UserForm struct {
 	Nickname  string           `json:"nickname"`
 	Avatar    string           `json:"avatar"`
 	GroupId   uint             `json:"group_id" validate:"required"`
+	Role      string           `json:"role"`
 	IsAdmin   *bool            `json:"is_admin" `
 	Status    model.StatusCode `json:"status" validate:"required,gte=0"`
 	Remark    string           `json:"remark"`
@@ -25,6 +26,7 @@ func (uf *UserForm) FromUser(user *model.User) *UserForm {
 	uf.Email = user.Email
 	uf.Avatar = user.Avatar
 	uf.GroupId = user.GroupId
+	uf.Role = user.Role
 	uf.IsAdmin = user.IsAdmin
 	uf.Status = user.Status
 	uf.Remark = user.Remark
@@ -39,6 +41,7 @@ func (uf *UserForm) ToUser() *model.User {
 	user.Email = uf.Email
 	user.Avatar = uf.Avatar
 	user.GroupId = uf.GroupId
+	user.Role = uf.Role
 	user.IsAdmin = uf.IsAdmin
 	user.Status = uf.Status
 	user.Remark = uf.Remark
