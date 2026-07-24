@@ -177,4 +177,20 @@ func (i *Index) Version(c *gin.Context) {
 	)
 }
 
+// ServerInfo 后端版本信息
+// @Tags 首页
+// @Summary 后端版本信息
+// @Description 返回后端版本号
+// @Accept  json
+// @Produce  json
+// @Success 200 {object} response.Response
+// @Failure 500 {object} response.Response
+// @Router /server/info [get]
+func (i *Index) ServerInfo(c *gin.Context) {
+	v := service.AllService.AppService.GetAppVersion()
+	c.JSON(http.StatusOK, gin.H{
+		"backend_version": v,
+	})
+}
+
 
