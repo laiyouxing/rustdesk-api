@@ -463,6 +463,8 @@ func (us *UserService) Register(username string, email string, password string, 
 }
 
 func (us *UserService) TokenList(page uint, size uint, f func(tx *gorm.DB)) *model.UserTokenList {
+	// 自动删除已过期的 token
+	us.DeleteExpiredUserToken()
 	res := &model.UserTokenList{}
 	res.Page = int64(page)
 	res.PageSize = int64(size)
@@ -531,6 +533,10 @@ func (us *UserService) AutoRefreshAccessToken(ut *model.UserToken) {
 
 func (us *UserService) BatchDeleteUserToken(ids []uint) error {
 	return DB.Where("id in ?", ids).Delete(&model.UserToken{}).Error
+}
+
+func (us *UserService) DeleteExpiredUserToken() error {
+	return DB.Where("expired_at < ? AND expired_at > 0", time.Now().Unix()).Delete(&model.UserToken{}).Error
 }
 
 func (us *UserService) VerifyJWT(token string) (uint, error) {

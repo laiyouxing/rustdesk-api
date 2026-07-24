@@ -93,6 +93,25 @@ func (ct *UserToken) Delete(c *gin.Context) {
 // @Failure 500 {object} response.Response
 // @Router /admin/user_token/batchDelete [post]
 // @Security token
+// DeleteExpired 删除已过期登录凭证
+// @Tags 登录凭证
+// @Summary 删除已过期登录凭证
+// @Description 删除已过期登录凭证
+// @Accept  json
+// @Produce  json
+// @Success 200 {object} response.Response
+// @Failure 500 {object} response.Response
+// @Router /admin/user_token/deleteExpired [post]
+// @Security token
+func (ct *UserToken) DeleteExpired(c *gin.Context) {
+	err := service.AllService.UserService.DeleteExpiredUserToken()
+	if err == nil {
+		response.Success(c, nil)
+		return
+	}
+	response.Fail(c, 101, err.Error())
+}
+
 func (ct *UserToken) BatchDelete(c *gin.Context) {
 	f := &admin.UserTokenBatchDeleteForm{}
 	if err := c.ShouldBindJSON(f); err != nil {

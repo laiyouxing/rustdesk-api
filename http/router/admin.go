@@ -312,6 +312,7 @@ func UserTokenBind(rg *gin.RouterGroup) {
 	aR.GET("/list", cont.List)
 	aR.POST("/delete", cont.Delete)
 	aR.POST("/batchDelete", cont.BatchDelete)
+	aR.POST("/deleteExpired", cont.DeleteExpired)
 }
 func ConfigBind(rg *gin.RouterGroup) {
 	aR := rg.Group("/config")
