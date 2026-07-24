@@ -124,10 +124,12 @@ func (sc *SubscriptionCtl) Extend(c *gin.Context) {
 	// 永久套餐特殊处理：设为 9999 年
 	if req.PlanKey == "forever" {
 		newExpire = time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
+		// 永久会员：expired_at 设为 0（永不过期）
 		if err := global.DB.Model(&model.User{}).Where("id = ?", req.UserID).
 			Updates(map[string]interface{}{
 				"subscription_plan":      req.Plan + "-forever",
 				"subscription_expire_at": &newExpire,
+				"expired_at":             0,
 			}).Error; err != nil {
 			response.Fail(c, 500, err.Error())
 			return
@@ -154,10 +156,12 @@ func (sc *SubscriptionCtl) Extend(c *gin.Context) {
 		newExpire = user.SubscriptionExpireAt.Add(periodDuration)
 	}
 
+	expiredAt := newExpire.Unix()
 	if err := global.DB.Model(&model.User{}).Where("id = ?", req.UserID).
 		Updates(map[string]interface{}{
 			"subscription_plan":      req.Plan,
 			"subscription_expire_at": &newExpire,
+			"expired_at":             expiredAt,
 		}).Error; err != nil {
 		response.Fail(c, 500, err.Error())
 		return

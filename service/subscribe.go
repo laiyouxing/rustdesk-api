@@ -248,10 +248,13 @@ func (s *SubscribeService) HandleNotify(params map[string]string) (bool, error) 
 		} else {
 			newExpire = user.SubscriptionExpireAt.Add(periodDuration)
 		}
+		// 同步更新 expired_at，使会员过期时客户端也无法登录
+		expiredAt := newExpire.Unix()
 		if err := tx.Model(&model.User{}).Where("id = ?", order.UserID).
 			Updates(map[string]interface{}{
 				"subscription_plan":      plan,
 				"subscription_expire_at": &newExpire,
+				"expired_at":             expiredAt,
 			}).Error; err != nil {
 			return err
 		}

@@ -124,10 +124,13 @@ func (s *InviteCodeService) Activate(codeStr string, userID uint) (*model.Invite
 		} else {
 			newExpire = user.SubscriptionExpireAt.Add(periodDuration)
 		}
+		// 同步更新 expired_at
+		expiredAt := newExpire.Unix()
 		if err := tx.Model(&model.User{}).Where("id = ?", userID).
 			Updates(map[string]interface{}{
 				"subscription_plan":      ic.Plan,
 				"subscription_expire_at": &newExpire,
+				"expired_at":             expiredAt,
 			}).Error; err != nil {
 			return err
 		}

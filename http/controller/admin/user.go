@@ -533,10 +533,12 @@ func (ct *User) Register(c *gin.Context) {
 			}
 			periodDuration := time.Duration(ic.ExpireDays*24) * time.Hour
 			newExpire := now.Add(periodDuration)
+			expiredAt := newExpire.Unix()
 			global.DB.Model(&model.User{}).Where("id = ?", u.Id).
 				Updates(map[string]interface{}{
 					"subscription_plan":      ic.Plan,
 					"subscription_expire_at": &newExpire,
+					"expired_at":             expiredAt,
 				})
 		}
 	}

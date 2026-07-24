@@ -89,16 +89,6 @@ func (ct *Login) Login(c *gin.Context) {
 		return
 	}
 
-	// 检查账户是否过期
-	if service.AllService.UserService.IsUserExpired(u) {
-		if needCaptcha {
-			response.Fail(c, 110, response.TranslateMsg(c, "AccountExpired"))
-			return
-		}
-		response.Fail(c, 101, response.TranslateMsg(c, "AccountExpired"))
-		return
-	}
-
 	// MFA 二次验证：已启用则下发临时令牌，前端进入动态码输入步骤
 	if u.MfaEnabled {
 		mfaToken := global.Jwt.GenerateMfaToken(u.Id)
@@ -165,11 +155,6 @@ func (ct *Login) MfaLogin(c *gin.Context) {
 	u := service.AllService.UserService.InfoById(uid)
 	if u.Id == 0 || !u.MfaEnabled {
 		response.Fail(c, 101, response.TranslateMsg(c, "MfaTokenInvalid"))
-		return
-	}
-	// 检查账户是否过期
-	if service.AllService.UserService.IsUserExpired(u) {
-		response.Fail(c, 101, response.TranslateMsg(c, "AccountExpired"))
 		return
 	}
 	// 校验动态码或恢复码
