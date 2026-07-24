@@ -126,6 +126,10 @@ subscription:
       name: "12个月"
       price_cents: 8800
       period_days: 365
+    - key: "forever"
+      name: "永久"
+      price_cents: 18800
+      period_days: 36500
   remind_days: [7, 3, 1]   # 临期提醒天数（前端用）
 
 # TOTP 校验时钟容差（时钟漂移周期数，每个周期 30s；Skew=N 即容忍 ±30s×N）。
