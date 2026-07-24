@@ -222,6 +222,10 @@ func (s *AlertService) checkOfflineDevices() {
 				rec.WeightDay = today
 			case peer.LastOnlineTime < now-threshold:
 				// 离线（超过阈值时长）：权重 +1
+				// 如果设备在告警创建前就已离线，跳过本次离线事件（不追溯历史）
+				if cfg.CreatedAt > 0 && peer.LastOnlineTime < cfg.CreatedAt {
+					break
+				}
 				rec.Weight++
 			default:
 				// 刚离线但尚未超过阈值：不计入权重
@@ -272,8 +276,9 @@ func (s *AlertService) checkOfflineDevices() {
 			}
 			lastOnline := time.Unix(peer.LastOnlineTime, 0).Format("2006-01-02 15:04:05")
 			title := "设备离线告警"
+			offlineMinutes := (now - peer.LastOnlineTime) / 60
 			content := fmt.Sprintf("设备：%s\n别名：%s\nID：%s\n离线时长：%d 分钟\n最后在线：%s\n离线权重：%d",
-				hostname, alias, peer.Id, cfg.OfflineMin, lastOnline, c.weight)
+				hostname, alias, peer.Id, offlineMinutes, lastOnline, c.weight)
 
 			// 发送外部渠道通知（邮件等）
 			AllService.NotifyService.SendByConfig(&cfg, title, content)

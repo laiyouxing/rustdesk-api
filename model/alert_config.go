@@ -14,6 +14,7 @@ type AlertConfig struct {
 	NotifiedPeers          string `json:"notified_peers" gorm:"type:text"` // JSON map（含每设备通知次数、权重等）
 	ConsecutiveTriggerDays int    `json:"consecutive_trigger_days" gorm:"default:0"` // 连续触发离线告警的天数
 	LastTriggerDay         int    `json:"last_trigger_day" gorm:"default:0"`          // 最近一次触发告警的日期（YYYYMMDD），用于连续天数计算
+	CreatedAt              int64  `json:"created_at" gorm:"autoCreateTime"`            // 告警创建时间戳，用于判断离线事件是否发生在创建之前
 }
 
 func (AlertConfig) TableName() string {
