@@ -481,6 +481,7 @@ func DatabaseAutoUpdate() {
 		&model.ServerStatusMonitor{},
 		&model.PayOrder{},
 		&model.InviteCode{},
+		&model.Announcement{},
 	}
 	for _, m := range fallbackModels {
 		if err := db.AutoMigrate(m); err != nil {

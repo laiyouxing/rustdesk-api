@@ -57,6 +57,7 @@ func Init(g *gin.Engine) {
 	AlertChannelBind(adg)
 	AlertConfigBind(adg)
 	StationMessageBind(adg)
+	AnnouncementBind(adg)
 	RustdeskCmdBind(adg)
 	DeviceGroupBind(adg)
 	BackupBind(adg)
@@ -114,6 +115,16 @@ func StationMessageBind(adg *gin.RouterGroup) {
 	// 广播和清理需要管理员权限
 	rg.POST("/broadcast", middleware.AdminPrivilege(), cont.Broadcast)
 	rg.POST("/cleanup", middleware.AdminPrivilege(), cont.Cleanup)
+}
+
+func AnnouncementBind(adg *gin.RouterGroup) {
+	cont := &admin.Announcement{}
+	rg := adg.Group("/announcement").Use(middleware.AdminPrivilege())
+	rg.GET("/list", cont.List)
+	rg.GET("/info", cont.Info)
+	rg.POST("/create", cont.Create)
+	rg.POST("/update", cont.Update)
+	rg.POST("/delete", cont.Delete)
 }
 
 func ServerStatusBind(adg *gin.RouterGroup) {

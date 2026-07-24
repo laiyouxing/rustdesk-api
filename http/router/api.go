@@ -106,6 +106,12 @@ func ApiInit(g *gin.Engine) {
 		frg.GET("/subscribe/plans", sc.Plans)
 	}
 
+	{
+		an := &api.Announcement{}
+		// 公告（无需登录）
+		frg.GET("/announcements", an.List)
+	}
+
 	frg.Use(middleware.RustAuth())
 	{
 		u := &api.User{}
