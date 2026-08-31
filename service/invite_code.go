@@ -130,11 +130,9 @@ func (s *InviteCodeService) Activate(codeStr string, userID uint) (*model.Invite
 			return err
 		}
 		var newExpire time.Time
-		var expiredAt int64
 		if ic.IsForever() {
-			// 永久授权码：会员/过期均设为 9999 年（expired_at=0 永不过期）
+			// 永久授权码：会员设为 9999 年
 			newExpire = time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
-			expiredAt = 0
 		} else {
 			periodDuration := time.Duration(ic.ExpireDays*24) * time.Hour
 			if user.SubscriptionExpireAt == nil || user.SubscriptionExpireAt.Before(now) {
@@ -142,14 +140,13 @@ func (s *InviteCodeService) Activate(codeStr string, userID uint) (*model.Invite
 			} else {
 				newExpire = user.SubscriptionExpireAt.Add(periodDuration)
 			}
-			expiredAt = newExpire.Unix()
 		}
-		// 同步更新 expired_at
+		// 只更新订阅时长与过期日期；expired_at 保持原值（0=永不过期），
+		// 保证订阅到期后用户仍可登录后台续费。
 		if err := tx.Model(&model.User{}).Where("id = ?", userID).
 			Updates(map[string]interface{}{
 				"subscription_plan":      ic.Plan,
 				"subscription_expire_at": &newExpire,
-				"expired_at":             expiredAt,
 			}).Error; err != nil {
 			return err
 		}

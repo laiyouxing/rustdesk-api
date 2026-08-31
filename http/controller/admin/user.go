@@ -543,23 +543,21 @@ func (ct *User) Register(c *gin.Context) {
 				response.Fail(c, 101, response.TranslateMsg(c, "InviteCodeInvalid"))
 				return
 			}
-			// 授权码绑定付费会员时长与账户过期日期
+			// 授权码绑定付费会员时长
 			var newExpire time.Time
-			var expiredAt int64
 			if ic.IsForever() {
-				// 永久授权码：会员/过期均设为 9999 年（expired_at=0 永不过期）
+				// 永久授权码：会员设为 9999 年
 				newExpire = time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
-				expiredAt = 0
 			} else {
 				periodDuration := time.Duration(ic.ExpireDays*24) * time.Hour
 				newExpire = now.Add(periodDuration)
-				expiredAt = newExpire.Unix()
 			}
+			// 只更新订阅时长；expired_at 保持 0（永不过期），
+			// 保证订阅到期后用户仍可登录后台续费。
 			global.DB.Model(&model.User{}).Where("id = ?", u.Id).
 				Updates(map[string]interface{}{
 					"subscription_plan":      ic.Plan,
 					"subscription_expire_at": &newExpire,
-					"expired_at":             expiredAt,
 				})
 		}
 	}

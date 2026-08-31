@@ -156,12 +156,12 @@ func (sc *SubscriptionCtl) Extend(c *gin.Context) {
 		newExpire = user.SubscriptionExpireAt.Add(periodDuration)
 	}
 
-	expiredAt := newExpire.Unix()
+	// 只更新订阅时长；expired_at 保持不变（账户级过期由管理员管理），
+	// 保证订阅到期后用户仍可登录后台续费。
 	if err := global.DB.Model(&model.User{}).Where("id = ?", req.UserID).
 		Updates(map[string]interface{}{
 			"subscription_plan":      req.Plan,
 			"subscription_expire_at": &newExpire,
-			"expired_at":             expiredAt,
 		}).Error; err != nil {
 		response.Fail(c, 500, err.Error())
 		return
