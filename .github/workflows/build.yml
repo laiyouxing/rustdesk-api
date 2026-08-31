@@ -171,6 +171,7 @@ jobs:
   deb-package:
     name: debian package - ${{ matrix.job.platform }}
     needs: build
+    if: always() && !cancelled()  # 部分平台 build 失败时，仍为成功平台打 deb
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -251,6 +252,7 @@ jobs:
   release:
     name: Create GitHub Release
     needs: [build, deb-package]
+    if: always() && !cancelled()  # 部分平台失败也发布：上传所有已成功构建的产物
     runs-on: ubuntu-latest
     permissions:
       contents: write
