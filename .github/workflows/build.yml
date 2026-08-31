@@ -35,6 +35,9 @@ on:
     tags:
       - '*.*.*'  # 当推送带版本号的 tag（例如 1.0.0）时触发工作流
       - 'test*'
+    branches:
+      - 'master'
+      - 'Subscribe'  # 分支 push 也构建并更新 latest Release
 
 env:
   LATEST_TAG: latest
@@ -97,6 +100,10 @@ jobs:
             TAG_VERSION="${GITHUB_REF##*/}"
           elif [ -n "$VERSION_TAG" ]; then
             TAG_VERSION="$VERSION_TAG"
+          elif [[ "${GITHUB_REF}" == refs/heads/* ]]; then
+            # 分支 push：不创建带版本号的 Release，改用固定 latest tag
+            # （允许覆盖，保证 Release 列表始终是最新构建）
+            TAG_VERSION="latest"
           else
             TAG_VERSION=""
           fi
@@ -189,6 +196,8 @@ jobs:
             TAG_VERSION="${GITHUB_REF##*/}"
           elif [ -n "$VERSION_TAG" ]; then
             TAG_VERSION="$VERSION_TAG"
+          elif [[ "${GITHUB_REF}" == refs/heads/* ]]; then
+            TAG_VERSION="latest"
           else
             TAG_VERSION=""
           fi
@@ -251,6 +260,9 @@ jobs:
             TAG_VERSION="${GITHUB_REF##*/}"
           elif [ -n "$VERSION_TAG" ]; then
             TAG_VERSION="$VERSION_TAG"
+          elif [[ "${GITHUB_REF}" == refs/heads/* ]]; then
+            # 分支 push：更新固定 latest Release（allow_override 覆盖旧产物）
+            TAG_VERSION="latest"
           else
             TAG_VERSION=""
           fi
@@ -316,12 +328,15 @@ jobs:
         id: vars
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            echo "TAG=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+            TAG="${GITHUB_REF#refs/tags/}"
           elif [ -n "$VERSION_TAG" ]; then
-            echo "TAG=$VERSION_TAG" >> $GITHUB_ENV
+            TAG="$VERSION_TAG"
           else
-            echo "TAG=latest" >> $GITHUB_ENV  # Default to 'latest' if not a tag
+            TAG="latest"  # Default to 'latest' if not a tag
           fi
+          VERSION="${TAG#v}"
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
