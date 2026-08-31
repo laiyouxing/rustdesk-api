@@ -161,27 +161,72 @@ func (s *AlertService) checkOfflineDevices() {
 		}
 	}
 
-	for _, cfg := range configs {
+	// ===== 第一步：解析所有规则监控范围，构建被监测设备池（去重） =====
+	// 所有规则统一从设备池中取设备、一次性查询在线状态，避免同一设备被多个规则重复加载，减轻数据库负担。
+	type ruleCfg struct {
+		cfg        *model.AlertConfig
+		activeDays int
+		peerIds    []string
+	}
+	var ruleCfgs []ruleCfg
+	pool := make(map[string]struct{})
+	poolDays := 0 // 设备池活跃窗口取各规则 activeDays 的最大值
+	for i := range configs {
+		cfg := &configs[i]
 		if cfg.Channel == "station" {
 			continue
 		}
+		peerIds, monitorAll := s.getMonitoredPeerIds(cfg)
+		if !monitorAll && len(peerIds) == 0 {
+			continue
+		}
+		activeDays := cfg.ActiveDays
+		if activeDays <= 0 {
+			activeDays = 30
+		}
+		ruleCfgs = append(ruleCfgs, ruleCfg{cfg: cfg, activeDays: activeDays, peerIds: peerIds})
+		for _, id := range peerIds {
+			pool[id] = struct{}{}
+		}
+		if activeDays > poolDays {
+			poolDays = activeDays
+		}
+	}
+	if len(ruleCfgs) == 0 {
+		return
+	}
+
+	// 一次性加载设备池的在线信息（排除超过 poolDays 天未上线的设备）
+	poolIds := make([]string, 0, len(pool))
+	for id := range pool {
+		poolIds = append(poolIds, id)
+	}
+	peerMap := make(map[string]model.Peer, len(pool))
+	var poolPeers []model.Peer
+	DB.Select("id, last_online_time, hostname, alias").
+		Where("last_online_time > ?", now-int64(poolDays)*86400).
+		Where("id in (?)", poolIds).
+		Find(&poolPeers)
+	for _, p := range poolPeers {
+		peerMap[p.Id] = p
+	}
+
+	// ===== 第二步：按规则从池中挑选设备，计算权重并推送 =====
+	for _, r := range ruleCfgs {
+		cfg := r.cfg
 		threshold := int64(cfg.OfflineMin * 60)
 		if threshold <= 0 {
 			threshold = 300
 		}
 
-		peerIds, monitorAll := s.getMonitoredPeerIds(&cfg)
-
-		// 加载被监控设备的在线信息（排除距今超过 30 天未上线的设备）
+		// 从池中挑选该规则监控的设备（再按规则自身的活跃窗口过滤）
 		var peers []model.Peer
-		q := DB.Select("id, last_online_time, hostname, alias").
-			Where("last_online_time > ?", now-30*86400)
-		if !monitorAll && len(peerIds) > 0 {
-			q = q.Where("id in (?)", peerIds)
-		} else if !monitorAll {
-			continue
+		window := now - int64(r.activeDays)*86400
+		for _, id := range r.peerIds {
+			if p, ok := peerMap[id]; ok && p.LastOnlineTime > window {
+				peers = append(peers, p)
+			}
 		}
-		q.Find(&peers)
 		if len(peers) == 0 {
 			continue
 		}
@@ -238,11 +283,17 @@ func (s *AlertService) checkOfflineDevices() {
 			}
 		}
 
+		// 同一设备每天最多推送次数（规则可配，默认 3）
+		maxPerDay := cfg.MaxNotifyPerDay
+		if maxPerDay <= 0 {
+			maxPerDay = maxNotifyPerDay
+		}
+
 		// 筛选可通知的设备（排除当天已达上限或冷却期内的）
 		var alertPeers []candidate
 		for _, c := range candidates {
 			rec := notifiedMap[c.peer.Id]
-			if isSameDay(rec.LastTime, now) && rec.Count >= maxNotifyPerDay {
+			if isSameDay(rec.LastTime, now) && rec.Count >= maxPerDay {
 				continue
 			}
 			if now-rec.LastTime < notifyCooldown {
@@ -281,7 +332,7 @@ func (s *AlertService) checkOfflineDevices() {
 				hostname, alias, peer.Id, offlineMinutes, lastOnline, c.weight)
 
 			// 发送外部渠道通知（邮件等）
-			AllService.NotifyService.SendByConfig(&cfg, title, content)
+			AllService.NotifyService.SendByConfig(cfg, title, content)
 
 			// 该用户是否有站内消息配置？有则发站内消息
 			if stationCfg, ok := userStationCfg[cfg.UserId]; ok && stationCfg != nil {
