@@ -35,6 +35,7 @@ type Service struct {
 	*SubscribeService
 	*InviteCodeService
 	*AnnouncementService
+	*AccountOpLogService
 }
 
 type Dependencies struct {

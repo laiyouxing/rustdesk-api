@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"fmt"
 	"strconv"
 	"time"
 
@@ -100,6 +101,23 @@ type ExtendReq struct {
 	PlanKey string `json:"plan_key" binding:"required"` // 时长 key：1m / 3m / 6m / 12m / forever
 }
 
+// TerminateReq 终止会员请求
+type TerminateReq struct {
+	UserID uint `json:"user_id" binding:"required"`
+}
+
+// recordOpLog 记录账户操作审计日志
+func recordOpLog(c *gin.Context, target *model.User, action, detail string) {
+	cur := service.AllService.UserService.CurUser(c)
+	opId := uint(0)
+	opName := ""
+	if cur != nil {
+		opId = cur.Id
+		opName = cur.Username
+	}
+	_ = service.AllService.AccountOpLogService.Log(opId, opName, target.Id, target.Username, action, detail)
+}
+
 // Extend 延长用户会员（按月付费）
 func (sc *SubscriptionCtl) Extend(c *gin.Context) {
 	req := &ExtendReq{}
@@ -120,6 +138,12 @@ func (sc *SubscriptionCtl) Extend(c *gin.Context) {
 
 	now := time.Now()
 	var newExpire time.Time
+	var detail string
+	// 无订阅或已过期视为"新建会员"，有有效订阅视为"延长"
+	action := "extend"
+	if user.SubscriptionExpireAt == nil || user.SubscriptionExpireAt.Before(now) {
+		action = "create"
+	}
 
 	// 永久套餐特殊处理：设为 9999 年
 	if req.PlanKey == "forever" {
@@ -134,6 +158,8 @@ func (sc *SubscriptionCtl) Extend(c *gin.Context) {
 			response.Fail(c, 500, err.Error())
 			return
 		}
+		detail = "设为永久会员"
+		recordOpLog(c, user, action, detail)
 		response.Success(c, map[string]interface{}{
 			"user_id":                req.UserID,
 			"plan":                   req.Plan + "-forever",
@@ -167,10 +193,47 @@ func (sc *SubscriptionCtl) Extend(c *gin.Context) {
 		return
 	}
 
+	detail = fmt.Sprintf("%s %d 天（%s），到期时间 %s",
+		map[bool]string{true: "开通", false: "延长"}[action == "create"],
+		opt.PeriodDays, opt.Name, newExpire.Format("2006-01-02 15:04"))
+	recordOpLog(c, user, action, detail)
+
 	response.Success(c, map[string]interface{}{
 		"user_id":                req.UserID,
 		"plan":                   req.Plan,
 		"subscription_expire_at": &newExpire,
+	})
+}
+
+// Terminate 终止用户会员（立即过期）
+func (sc *SubscriptionCtl) Terminate(c *gin.Context) {
+	req := &TerminateReq{}
+	if err := c.ShouldBindJSON(req); err != nil {
+		response.Fail(c, 400, "param error")
+		return
+	}
+
+	user := service.AllService.UserService.InfoById(req.UserID)
+	if user.Id == 0 {
+		response.Fail(c, 404, "user not found")
+		return
+	}
+
+	// 将订阅过期时间设为过去时间（立即终止）
+	expired := time.Now().Add(-time.Second)
+	if err := global.DB.Model(&model.User{}).Where("id = ?", req.UserID).
+		Updates(map[string]interface{}{
+			"subscription_expire_at": &expired,
+		}).Error; err != nil {
+		response.Fail(c, 500, err.Error())
+		return
+	}
+
+	recordOpLog(c, user, "terminate", "终止会员")
+
+	response.Success(c, map[string]interface{}{
+		"user_id":                req.UserID,
+		"subscription_expire_at": &expired,
 	})
 }
 

@@ -69,6 +69,7 @@ func Init(g *gin.Engine) {
 	InviteCodeBind(adg)
 	OrderBind(adg)
 	SubscriptionBind(adg)
+	AccountOpLogBind(adg)
 	//访问静态文件
 	//g.StaticFS("/upload", http.Dir(global.Config.Gin.ResourcesPath+"/upload"))
 }
@@ -527,4 +528,12 @@ func SubscriptionBind(adg *gin.RouterGroup) {
 	rg := adg.Group("/subscriptions").Use(middleware.AdminPrivilege())
 	rg.GET("/list", cont.List)
 	rg.POST("/extend", cont.Extend)
+	rg.POST("/terminate", cont.Terminate)
+}
+
+// AccountOpLogBind 账户操作审计日志（仅管理员）
+func AccountOpLogBind(adg *gin.RouterGroup) {
+	cont := &admin.AccountOpLog{}
+	rg := adg.Group("/account_op_log").Use(middleware.AdminPrivilege())
+	rg.GET("/list", cont.List)
 }

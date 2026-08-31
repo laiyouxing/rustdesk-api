@@ -77,6 +77,15 @@ func (ct *User) Create(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
 	}
+	// 记录管理员新建账户审计
+	cur := service.AllService.UserService.CurUser(c)
+	opId := uint(0)
+	opName := ""
+	if cur != nil {
+		opId = cur.Id
+		opName = cur.Username
+	}
+	_ = service.AllService.AccountOpLogService.Log(opId, opName, u.Id, u.Username, "create", "管理员创建账户")
 	response.Success(c, nil)
 }
 
@@ -567,6 +576,9 @@ func (ct *User) Register(c *gin.Context) {
 	// 2. 远程连接必须付费会员且在有效期内（subscription_expire_at 有效），
 	//    未付费用户 subscription_expire_at 为 nil（status=none），客户端会拒绝连接。
 	// 因此注册时不再默认设置永久订阅，仅当使用授权码激活时才绑定订阅时长。
+
+	// 记录账户新建操作审计
+	_ = service.AllService.AccountOpLogService.Log(u.Id, u.Username, u.Id, u.Username, "create", "用户注册新建账户")
 
 	if regStatus == model.COMMON_STATUS_DISABLED {
 		// 需要管理员审核
