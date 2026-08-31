@@ -46,6 +46,10 @@ func (s *InviteCodeService) Generate(plan string, userID uint, boundOrderID stri
 // GenerateWithDB 在指定 DB 连接（可以是事务 tx）上生成邀请码。
 // 在事务回调中必须传 tx，否则 SQLite 会因数据库级排他锁导致 "database is locked" 死锁。
 func (s *InviteCodeService) GenerateWithDB(db *gorm.DB, plan string, userID uint, boundOrderID string, expireDays int) (*model.InviteCode, error) {
+	// 永久码：码本身过期时间设为 9999 年
+	if plan == "forever" || expireDays >= 9999 {
+		expireDays = 99999
+	}
 	// 重试最多 10 次以避免唯一索引冲突
 	var code *model.InviteCode
 	for i := 0; i < 10; i++ {
@@ -54,7 +58,7 @@ func (s *InviteCodeService) GenerateWithDB(db *gorm.DB, plan string, userID uint
 			Code:         codeStr,
 			Plan:         plan,
 			ExpireDays:   expireDays,
-			ExpireAt:     time.Now().AddDate(0, 0, expireDays),
+			ExpireAt:     expireAtFor(expireDays),
 			Status:       "unused",
 			BoundOrderID: boundOrderID,
 		}
@@ -69,6 +73,14 @@ func (s *InviteCodeService) GenerateWithDB(db *gorm.DB, plan string, userID uint
 		return nil, fmt.Errorf("generate invite code: %w", err)
 	}
 	return nil, fmt.Errorf("generate invite code: failed after 10 retries")
+}
+
+// expireAtFor 计算授权码的码本身过期时间；永久码返回 9999 年
+func expireAtFor(expireDays int) time.Time {
+	if expireDays >= 9999 {
+		return time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
+	}
+	return time.Now().AddDate(0, 0, expireDays)
 }
 
 // Activate 使用邀请码激活用户订阅（顺延策略）
@@ -118,14 +130,21 @@ func (s *InviteCodeService) Activate(codeStr string, userID uint) (*model.Invite
 			return err
 		}
 		var newExpire time.Time
-		periodDuration := time.Duration(ic.ExpireDays*24) * time.Hour
-		if user.SubscriptionExpireAt == nil || user.SubscriptionExpireAt.Before(now) {
-			newExpire = now.Add(periodDuration)
+		var expiredAt int64
+		if ic.IsForever() {
+			// 永久授权码：会员/过期均设为 9999 年（expired_at=0 永不过期）
+			newExpire = time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
+			expiredAt = 0
 		} else {
-			newExpire = user.SubscriptionExpireAt.Add(periodDuration)
+			periodDuration := time.Duration(ic.ExpireDays*24) * time.Hour
+			if user.SubscriptionExpireAt == nil || user.SubscriptionExpireAt.Before(now) {
+				newExpire = now.Add(periodDuration)
+			} else {
+				newExpire = user.SubscriptionExpireAt.Add(periodDuration)
+			}
+			expiredAt = newExpire.Unix()
 		}
 		// 同步更新 expired_at
-		expiredAt := newExpire.Unix()
 		if err := tx.Model(&model.User{}).Where("id = ?", userID).
 			Updates(map[string]interface{}{
 				"subscription_plan":      ic.Plan,

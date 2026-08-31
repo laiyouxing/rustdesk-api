@@ -29,6 +29,11 @@ type InviteCode struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// IsForever 判断是否为永久授权码（plan=forever 或天数 >= 9999）
+func (ic *InviteCode) IsForever() bool {
+	return ic.Plan == "forever" || ic.ExpireDays >= 9999
+}
+
 // TableName 指定表名
 func (InviteCode) TableName() string {
 	return "invite_codes"

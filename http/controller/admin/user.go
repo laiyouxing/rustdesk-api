@@ -524,6 +524,7 @@ func (ct *User) Register(c *gin.Context) {
 	}
 
 	// 注册成功后消耗授权码 + 激活订阅（原子更新防止并发重复使用）
+	subscriptionActivated := false
 	if global.Config.App.InviteOnly && f.InviteCode != "" {
 		ics := &service.InviteCodeService{}
 		ic := ics.InfoByCode(f.InviteCode)
@@ -543,16 +544,38 @@ func (ct *User) Register(c *gin.Context) {
 				response.Fail(c, 101, response.TranslateMsg(c, "InviteCodeInvalid"))
 				return
 			}
-			periodDuration := time.Duration(ic.ExpireDays*24) * time.Hour
-			newExpire := now.Add(periodDuration)
-			expiredAt := newExpire.Unix()
+			// 授权码绑定付费会员时长与账户过期日期
+			var newExpire time.Time
+			var expiredAt int64
+			if ic.IsForever() {
+				// 永久授权码：会员/过期均设为 9999 年（expired_at=0 永不过期）
+				newExpire = time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
+				expiredAt = 0
+			} else {
+				periodDuration := time.Duration(ic.ExpireDays*24) * time.Hour
+				newExpire = now.Add(periodDuration)
+				expiredAt = newExpire.Unix()
+			}
 			global.DB.Model(&model.User{}).Where("id = ?", u.Id).
 				Updates(map[string]interface{}{
 					"subscription_plan":      ic.Plan,
 					"subscription_expire_at": &newExpire,
 					"expired_at":             expiredAt,
 				})
+			subscriptionActivated = true
 		}
+	}
+
+	// 所有注册账户默认永久会员，保证注册后即可正常登录后台与使用客户端。
+	// 若已通过授权码激活订阅，则以授权码为准，不覆盖。
+	if !subscriptionActivated {
+		newExpire := time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
+		global.DB.Model(&model.User{}).Where("id = ?", u.Id).
+			Updates(map[string]interface{}{
+				"subscription_plan":      "permanent",
+				"subscription_expire_at": &newExpire,
+				"expired_at":             0,
+			})
 	}
 
 	if regStatus == model.COMMON_STATUS_DISABLED {

@@ -241,15 +241,22 @@ func (s *SubscribeService) HandleNotify(params map[string]string) (bool, error) 
 		if err := tx.Where("id = ?", order.UserID).First(user).Error; err != nil {
 			return err
 		}
-		periodDuration := time.Duration(periodDays*24) * time.Hour
 		var newExpire time.Time
-		if user.SubscriptionExpireAt == nil || user.SubscriptionExpireAt.Before(now) {
-			newExpire = now.Add(periodDuration)
+		var expiredAt int64
+		if ic.IsForever() {
+			// 永久套餐：会员/过期均设为 9999 年（expired_at=0 永不过期）
+			newExpire = time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
+			expiredAt = 0
 		} else {
-			newExpire = user.SubscriptionExpireAt.Add(periodDuration)
+			periodDuration := time.Duration(periodDays*24) * time.Hour
+			if user.SubscriptionExpireAt == nil || user.SubscriptionExpireAt.Before(now) {
+				newExpire = now.Add(periodDuration)
+			} else {
+				newExpire = user.SubscriptionExpireAt.Add(periodDuration)
+			}
+			expiredAt = newExpire.Unix()
 		}
 		// 同步更新 expired_at，使会员过期时客户端也无法登录
-		expiredAt := newExpire.Unix()
 		if err := tx.Model(&model.User{}).Where("id = ?", order.UserID).
 			Updates(map[string]interface{}{
 				"subscription_plan":      plan,
