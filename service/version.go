@@ -48,7 +48,15 @@ func (s *AppReleaseService) Create(v *model.AppRelease) error {
 }
 
 func (s *AppReleaseService) Update(v *model.AppRelease) {
-	DB.Model(v).Where("id = ?", v.Id).Updates(v)
+	// 用 map 显式更新，避免 Updates(struct) 跳过零值字段（如 force_update=0）
+	DB.Model(&model.AppRelease{}).Where("id = ?", v.Id).Updates(map[string]interface{}{
+		"version":      v.Version,
+		"platform":     v.Platform,
+		"url":          v.Url,
+		"note":         v.Note,
+		"status":       v.Status,
+		"force_update": v.ForceUpdate,
+	})
 }
 
 func (s *AppReleaseService) Delete(id uint) {

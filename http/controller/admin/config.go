@@ -138,7 +138,10 @@ func (co *Config) ConfigFileGet(c *gin.Context) {
 // @Security token
 func (co *Config) ConfigFileUpdate(c *gin.Context) {
 	type Req struct {
-		Content string `json:"content" binding:"required"`
+		Content        string `json:"content" binding:"required"`
+		VerifyUsername string `json:"verify_username"` // 超级管理员用户名（操作者自行填写，接口不返回）
+		VerifyPassword string `json:"verify_password"` // 超级管理员登录密码
+		MfaCode        string `json:"mfa_code"`        // 超级管理员 MFA 动态码（其开启 MFA 时必填）
 	}
 	var req Req
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -149,6 +152,12 @@ func (co *Config) ConfigFileUpdate(c *gin.Context) {
 	path := global.ConfigPath
 	if path == "" {
 		response.Fail(c, 500, "配置文件路径未知")
+		return
+	}
+	// 修改配置文件属高危操作：需超级管理员（最早创建的管理员，id=1）账号授权。
+	// 与新建/提升管理员的二次确认共用同一逻辑：用户名 + 密码 + MFA，失败统一返回 AdminAuthFailed。
+	if ok, errMsg := verifyAdminReconfirm(req.VerifyUsername, req.VerifyPassword, req.MfaCode); !ok {
+		response.Fail(c, 101, response.TranslateMsg(c, errMsg))
 		return
 	}
 	// 校验 YAML 合法性（不真正加载到运行配置，仅解析）
