@@ -302,6 +302,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # 分支 push：除自动版本号 Release 外，额外更新 latest Release（allow_override 覆盖），
+      # 保持 latest 入口始终指向最新构建。
+      - name: Upload to latest Release (branch push)
+        if: env.TAG_VERSION != '' && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: latest
+          allow_override: true
+          files: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.zip
+            artifacts/**/*.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Generate Changelog
         if: startsWith(github.ref, 'refs/tags/') && github.event_name == 'push' && env.TAG_VERSION != ''
         run: npx changelogithub@1.5.1
