@@ -4,7 +4,7 @@
 runtime/*
 !runtime
 !runtime/cache/.gitkeep
-go.sum
+# go.sum 需要入库，否则 CI 无 tidy 步骤时缺少校验条目（Go 官方推荐提交 go.sum）
 release
 data/rustdeskapi.db*.exe
 # 防止 go build 产物被提交
