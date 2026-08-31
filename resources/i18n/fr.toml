@@ -167,3 +167,8 @@ other = "Banni."
 description = "Register success wait admin confirm."
 one = "Inscription réussie, veuillez attendre la confirmation de l'administrateur."
 other = "Inscription réussie, veuillez attendre la confirmation de l'administrateur."
+
+[AdminAuthFailed]
+description = "Super admin authorization failed."
+one = "Échec de l'autorisation du super administrateur."
+other = "Échec de l'autorisation du super administrateur."

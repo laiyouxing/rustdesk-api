@@ -167,3 +167,8 @@ other = "已被禁用。"
 description = "Register success, wait admin confirm."
 one = "註冊成功，等待管理員確認。"
 other = "註冊成功，等待管理員確認。"
+
+[AdminAuthFailed]
+description = "Super admin authorization failed."
+one = "超級管理員授權校驗失敗。"
+other = "超級管理員授權校驗失敗。"

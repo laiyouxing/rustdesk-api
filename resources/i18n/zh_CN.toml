@@ -78,6 +78,11 @@ description = "Password error."
 one = "密码错误。"
 other = "密码错误。"
 
+[AdminAuthFailed]
+description = "Super admin authorization failed."
+one = "超级管理员授权校验失败。"
+other = "超级管理员授权校验失败。"
+
 [MfaEnabled]
 description = "MFA enabled."
 one = "已启用多因素认证。"

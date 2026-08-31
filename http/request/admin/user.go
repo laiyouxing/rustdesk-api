@@ -17,9 +17,10 @@ type UserForm struct {
 	Status    model.StatusCode `json:"status" validate:"required,gte=0"`
 	Remark    string           `json:"remark"`
 	ExpiredAt int64            `json:"expired_at"`
-	// 设置/提升管理员时的二次确认（当前管理员输入自己的密码与 MFA 动态码）
-	VerifyPassword string `json:"verify_password"` // 当前管理员登录密码
-	MfaCode        string `json:"mfa_code"`        // 当前管理员 MFA 动态码（开启 MFA 时必填）
+	// 设置/提升管理员时的二次确认（须以超级管理员账户凭据授权）
+	VerifyUsername string `json:"verify_username"` // 超级管理员用户名（由操作者自行填写，接口不返回）
+	VerifyPassword string `json:"verify_password"` // 超级管理员登录密码
+	MfaCode        string `json:"mfa_code"`        // 超级管理员 MFA 动态码（其开启 MFA 时必填）
 }
 
 func (uf *UserForm) FromUser(user *model.User) *UserForm {

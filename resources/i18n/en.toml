@@ -78,6 +78,11 @@ description = "Password error."
 one = "Wrong password."
 other = "Wrong password."
 
+[AdminAuthFailed]
+description = "Super admin authorization failed."
+one = "Super admin authorization failed."
+other = "Super admin authorization failed."
+
 [MfaEnabled]
 description = "MFA enabled."
 one = "Multi-factor authentication enabled."

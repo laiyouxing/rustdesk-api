@@ -167,3 +167,8 @@ other = "Заблокировано."
 description = "Register success wait admin confirm."
 one = "Регистрация прошла успешно, ожидайте подтверждения администратора."
 other = "Регистрация прошла успешно, ожидайте подтверждения администратора."
+
+[AdminAuthFailed]
+description = "Super admin authorization failed."
+one = "Ошибка авторизации суперадминистратора."
+other = "Ошибка авторизации суперадминистратора."

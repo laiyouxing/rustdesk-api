@@ -167,3 +167,8 @@ other = "Prohibido."
 description = "Register success, wait admin confirm."
 one = "Registro exitoso, espere la confirmación del administrador."
 other = "Registro exitoso, espere la confirmación del administrador."
+
+[AdminAuthFailed]
+description = "Super admin authorization failed."
+one = "Error de autorización del superadministrador."
+other = "Error de autorización del superadministrador."

@@ -330,6 +330,17 @@ func (us *UserService) IsAdmin(u *model.User) bool {
 	return false
 }
 
+// RootAdmin 返回超级管理员账户：最早创建的管理员（role=admin 且 id 最小）。
+// 新建/提升管理员时的二次确认须以该账户凭据授权，而非固定 username="admin"。
+func (us *UserService) RootAdmin() *model.User {
+	u := &model.User{}
+	DB.Where("role = ? OR is_admin = ?", "admin", true).Order("id asc").First(u)
+	if u.Id == 0 {
+		return nil
+	}
+	return u
+}
+
 // RouteNames
 func (us *UserService) RouteNames(u *model.User) []string {
 	if us.IsAdmin(u) {
