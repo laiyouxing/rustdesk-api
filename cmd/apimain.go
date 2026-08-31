@@ -56,6 +56,8 @@ var rootCmd = &cobra.Command{
 		go service.AllService.AuditService.StartStaleConnCloseSweep()
 		// 基于心跳 conns 的快速连接心跳检测（60s 超时），检测异常断开
 		go service.AllService.AuditService.StartConnHeartbeatSweep()
+		// 日志目录磁盘空间不足自动清理
+		go service.AllService.LogCleanupService.StartLogCleanupSweep()
 	},
 }
 

@@ -21,6 +21,28 @@ import (
 type User struct {
 }
 
+// verifyAdminReconfirm 创建/提升管理员时的二次确认：
+// 校验当前登录管理员输入自己的登录密码，若其开启了 MFA 还需校验动态码。
+// 返回 (是否通过, 错误信息空串)。防止普通会话被冒用后静默提权。
+func verifyAdminReconfirm(c *gin.Context, verifyPassword, mfaCode string) (bool, string) {
+	cur := service.AllService.UserService.CurUser(c)
+	if cur == nil || cur.Id == 0 {
+		return false, "NoAccess"
+	}
+	// 校验密码
+	ok, _, err := utils.VerifyPassword(cur.Password, verifyPassword)
+	if err != nil || !ok {
+		return false, "PasswordError"
+	}
+	// 若当前管理员开启了 MFA，必须校验动态码
+	if cur.MfaEnabled {
+		if !service.AllService.UserService.VerifyMfaCode(cur, mfaCode) {
+			return false, "MfaCodeError"
+		}
+	}
+	return true, ""
+}
+
 // Detail 管理员
 // @Tags 用户
 // @Summary 管理员详情
@@ -71,6 +93,13 @@ func (ct *User) Create(c *gin.Context) {
 		u.Role = "admin"
 	} else if u.Role == "" {
 		u.Role = "user"
+	}
+	// 新建管理员：必须当前管理员二次确认（自己的密码 + MFA）
+	if u.Role == "admin" {
+		if ok, errMsg := verifyAdminReconfirm(c, f.VerifyPassword, f.MfaCode); !ok {
+			response.Fail(c, 101, response.TranslateMsg(c, errMsg))
+			return
+		}
 	}
 	err := service.AllService.UserService.Create(u)
 	if err != nil {
@@ -154,6 +183,14 @@ func (ct *User) Update(c *gin.Context) {
 		u.Role = "admin"
 	} else if u.Role == "" {
 		u.Role = "user"
+	}
+	// 将普通用户提升为管理员：必须当前管理员二次确认（自己的密码 + MFA）
+	oldUser := service.AllService.UserService.InfoById(f.Id)
+	if u.Role == "admin" && (oldUser.Id == 0 || oldUser.Role != "admin") {
+		if ok, errMsg := verifyAdminReconfirm(c, f.VerifyPassword, f.MfaCode); !ok {
+			response.Fail(c, 101, response.TranslateMsg(c, errMsg))
+			return
+		}
 	}
 	err := service.AllService.UserService.Update(u)
 	if err != nil {
