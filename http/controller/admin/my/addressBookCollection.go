@@ -1,6 +1,7 @@
 package my
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/http/request/admin"
@@ -42,6 +43,7 @@ func (abc *AddressBookCollection) Create(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
 	}
+	recordAbOpLog(c, u.Id, u.Username, "collection_create", fmt.Sprintf("新建地址簿分组 %s", f.Name))
 	response.Success(c, nil)
 }
 
@@ -117,6 +119,7 @@ func (abc *AddressBookCollection) Update(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
 	}
+	recordAbOpLog(c, u.Id, u.Username, "collection_update", fmt.Sprintf("编辑地址簿分组 %s", ex.Name))
 	response.Success(c, nil)
 }
 
@@ -155,6 +158,7 @@ func (abc *AddressBookCollection) Delete(c *gin.Context) {
 	}
 	err := service.AllService.AddressBookService.DeleteCollection(ex)
 	if err == nil {
+		recordAbOpLog(c, u.Id, u.Username, "collection_delete", fmt.Sprintf("删除地址簿分组 %s", ex.Name))
 		response.Success(c, nil)
 		return
 	}

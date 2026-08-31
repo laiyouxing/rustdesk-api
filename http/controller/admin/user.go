@@ -160,6 +160,7 @@ func (ct *User) Update(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
 	}
+	recordOpLog(c, u, "update", "管理员编辑账户")
 	response.Success(c, nil)
 }
 
@@ -190,6 +191,7 @@ func (ct *User) Delete(c *gin.Context) {
 	if u.Id > 0 {
 		err := service.AllService.UserService.Delete(u)
 		if err == nil {
+			recordOpLog(c, u, "delete", "管理员删除账户")
 			response.Success(c, nil)
 			return
 		}
@@ -233,6 +235,7 @@ func (ct *User) UpdatePassword(c *gin.Context) {
 	}
 	// 改密码后清除该用户所有会话令牌，强制重新登录，防止旧 token 被冒用
 	_ = service.AllService.UserService.FlushToken(u)
+	recordOpLog(c, u, "update", "管理员重置账户密码")
 	response.Success(c, nil)
 }
 
@@ -294,6 +297,7 @@ func (ct *User) ChangeCurPwd(c *gin.Context) {
 	}
 	// 改密码后清除当前用户所有会话令牌，强制重新登录，防止旧 token 被冒用
 	_ = service.AllService.UserService.FlushToken(u)
+	recordOpLog(c, u, "update", "用户修改自己密码")
 	response.Success(c, nil)
 }
 
@@ -394,6 +398,7 @@ func (ct *User) MfaEnable(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
 	}
+	recordOpLog(c, u, "update", "用户启用 MFA")
 	response.Success(c, gin.H{"recovery_codes": codes})
 }
 
@@ -425,6 +430,7 @@ func (ct *User) MfaDisable(c *gin.Context) {
 	}
 	// 关闭 MFA 后清除当前用户所有会话令牌，强制重新登录，防止旧 token 被冒用
 	_ = service.AllService.UserService.FlushToken(u)
+	recordOpLog(c, u, "update", "用户关闭 MFA")
 	response.Success(c, nil)
 }
 
@@ -465,6 +471,7 @@ func (ct *User) MfaReset(c *gin.Context) {
 	}
 	// 重置 MFA 后清除该用户所有会话令牌，强制重新登录，防止旧 token 被冒用
 	_ = service.AllService.UserService.FlushToken(u)
+	recordOpLog(c, u, "update", "管理员重置用户 MFA")
 	response.Success(c, nil)
 }
 

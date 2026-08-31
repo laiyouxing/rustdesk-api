@@ -3,6 +3,7 @@ package admin
 import (
 	"encoding/json"
 	_ "encoding/json"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/http/request/admin"
@@ -13,6 +14,24 @@ import (
 )
 
 type AddressBook struct {
+}
+
+// recordAbOpLog 记录地址簿操作审计日志（管理员代操作时 operator 为当前管理员）
+func recordAbOpLog(c *gin.Context, userId uint, username, action, detail string) {
+	cur := service.AllService.UserService.CurUser(c)
+	opId := uint(0)
+	opName := ""
+	if cur != nil {
+		opId = cur.Id
+		opName = cur.Username
+	}
+	if username == "" && userId > 0 {
+		tu := service.AllService.UserService.InfoById(userId)
+		if tu.Id > 0 {
+			username = tu.Username
+		}
+	}
+	_ = service.AllService.AddressBookOpLogService.Log(opId, opName, userId, username, action, detail)
 }
 
 // Detail 地址簿
@@ -80,6 +99,7 @@ func (ct *AddressBook) Create(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
 	}
+	recordAbOpLog(c, t.UserId, "", "create", fmt.Sprintf("添加地址簿 %s（%s）", t.Id, t.Hostname))
 	response.Success(c, nil)
 }
 
@@ -141,6 +161,7 @@ func (ct *AddressBook) BatchCreate(c *gin.Context) {
 		ex := service.AllService.AddressBookService.InfoByUserIdAndIdAndCid(t.UserId, t.Id, t.CollectionId)
 		if ex.RowId == 0 {
 			service.AllService.AddressBookService.Create(t)
+			recordAbOpLog(c, t.UserId, "", "create", fmt.Sprintf("批量添加地址簿 %s（%s）", t.Id, t.Hostname))
 		}
 	}
 
@@ -236,6 +257,7 @@ func (ct *AddressBook) Update(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
 	}
+	recordAbOpLog(c, ex.UserId, "", "update", fmt.Sprintf("编辑地址簿 %s（%s）", ex.Id, ex.Hostname))
 	response.Success(c, nil)
 }
 
@@ -269,6 +291,7 @@ func (ct *AddressBook) Delete(c *gin.Context) {
 	}
 	err := service.AllService.AddressBookService.Delete(t)
 	if err == nil {
+		recordAbOpLog(c, t.UserId, "", "delete", fmt.Sprintf("删除地址簿 %s（%s）", t.Id, t.Hostname))
 		response.Success(c, nil)
 		return
 	}
@@ -311,6 +334,7 @@ func (ct *AddressBook) ShareByWebClient(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
 	}
+	recordAbOpLog(c, u.Id, u.Username, "share", fmt.Sprintf("分享地址簿 %s", ab.Id))
 	response.Success(c, &gin.H{
 		"share_token": m.ShareToken,
 	})
@@ -356,6 +380,7 @@ func (ct *AddressBook) BatchCreateFromPeers(c *gin.Context) {
 			continue
 		}
 		service.AllService.AddressBookService.Create(ab)
+		recordAbOpLog(c, f.UserId, "", "batch_create", fmt.Sprintf("从设备批量添加地址簿 %s", ab.Id))
 	}
 	response.Success(c, nil)
 }

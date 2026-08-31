@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"fmt"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -112,6 +113,8 @@ func (o *Oauth) BindConfirm(c *gin.Context) {
 		return
 	}
 
+	recordOpLog(c, user, "update", fmt.Sprintf("用户绑定 OAuth：%s", oauthCache.Op))
+
 	oauthCache.UserId = user.Id
 	oauthService.SetOauthCache(j.Code, oauthCache, 0)
 	response.Success(c, oauthCache)
@@ -135,6 +138,7 @@ func (o *Oauth) Unbind(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
 	}
+	recordOpLog(c, u, "update", fmt.Sprintf("用户解绑 OAuth：%s", f.Op))
 	response.Success(c, nil)
 }
 

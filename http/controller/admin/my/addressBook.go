@@ -2,6 +2,7 @@ package my
 
 import (
 	"encoding/json"
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/http/request/admin"
@@ -11,6 +12,21 @@ import (
 )
 
 type AddressBook struct{}
+
+// recordAbOpLog 记录地址簿操作审计日志（操作者为当前登录用户）
+func recordAbOpLog(c *gin.Context, userId uint, username, action, detail string) {
+	cur := service.AllService.UserService.CurUser(c)
+	opId := uint(0)
+	opName := ""
+	if cur != nil {
+		opId = cur.Id
+		opName = cur.Username
+	}
+	if username == "" {
+		username = opName
+	}
+	_ = service.AllService.AddressBookOpLogService.Log(opId, opName, userId, username, action, detail)
+}
 
 // List 列表
 // @Tags 我的地址簿
@@ -101,6 +117,7 @@ func (ct *AddressBook) Create(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
 	}
+	recordAbOpLog(c, u.Id, u.Username, "create", fmt.Sprintf("添加地址簿 %s（%s）", t.Id, t.Hostname))
 	response.Success(c, nil)
 }
 
@@ -155,6 +172,7 @@ func (ct *AddressBook) Update(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
 	}
+	recordAbOpLog(c, u.Id, u.Username, "update", fmt.Sprintf("编辑地址簿 %s（%s）", ex.Id, ex.Hostname))
 	response.Success(c, nil)
 }
 
@@ -193,6 +211,7 @@ func (ct *AddressBook) Delete(c *gin.Context) {
 	}
 	err := service.AllService.AddressBookService.Delete(ex)
 	if err == nil {
+		recordAbOpLog(c, u.Id, u.Username, "delete", fmt.Sprintf("删除地址簿 %s（%s）", ex.Id, ex.Hostname))
 		response.Success(c, nil)
 		return
 	}
@@ -242,6 +261,7 @@ func (ct *AddressBook) BatchCreateFromPeers(c *gin.Context) {
 			continue
 		}
 		service.AllService.AddressBookService.Create(ab)
+		recordAbOpLog(c, u.Id, u.Username, "batch_create", fmt.Sprintf("从设备批量添加地址簿 %s", ab.Id))
 	}
 	response.Success(c, nil)
 }
@@ -267,5 +287,6 @@ func (ct *AddressBook) BatchUpdateTags(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
 	}
+	recordAbOpLog(c, u.Id, u.Username, "update_tags", fmt.Sprintf("批量更新地址簿标签 %d 条", len(abs.AddressBooks)))
 	response.Success(c, nil)
 }

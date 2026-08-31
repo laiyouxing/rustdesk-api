@@ -70,6 +70,7 @@ func Init(g *gin.Engine) {
 	OrderBind(adg)
 	SubscriptionBind(adg)
 	AccountOpLogBind(adg)
+	AddressBookOpLogBind(adg)
 	//访问静态文件
 	//g.StaticFS("/upload", http.Dir(global.Config.Gin.ResourcesPath+"/upload"))
 }
@@ -535,5 +536,12 @@ func SubscriptionBind(adg *gin.RouterGroup) {
 func AccountOpLogBind(adg *gin.RouterGroup) {
 	cont := &admin.AccountOpLog{}
 	rg := adg.Group("/account_op_log").Use(middleware.AdminPrivilege())
+	rg.GET("/list", cont.List)
+}
+
+// AddressBookOpLogBind 地址簿操作审计日志（仅管理员）
+func AddressBookOpLogBind(adg *gin.RouterGroup) {
+	cont := &admin.AddressBookOpLog{}
+	rg := adg.Group("/address_book_op_log").Use(middleware.AdminPrivilege())
 	rg.GET("/list", cont.List)
 }

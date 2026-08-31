@@ -1,6 +1,7 @@
 package my
 
 import (
+	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/http/request/admin"
@@ -75,6 +76,7 @@ func (ct *Tag) Create(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
 	}
+	recordAbOpLog(c, u.Id, u.Username, "tag_create", fmt.Sprintf("新建标签 %s", t.Name))
 	response.Success(c, nil)
 }
 
@@ -130,6 +132,7 @@ func (ct *Tag) Update(c *gin.Context) {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
 	}
+	recordAbOpLog(c, u.Id, u.Username, "tag_update", fmt.Sprintf("编辑标签 %s", ex.Name))
 	response.Success(c, nil)
 }
 
@@ -168,6 +171,7 @@ func (ct *Tag) Delete(c *gin.Context) {
 	}
 	err := service.AllService.TagService.Delete(ex)
 	if err == nil {
+		recordAbOpLog(c, u.Id, u.Username, "tag_delete", fmt.Sprintf("删除标签 %s", ex.Name))
 		response.Success(c, nil)
 		return
 	}
