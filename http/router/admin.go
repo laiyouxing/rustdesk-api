@@ -175,6 +175,7 @@ func UserBind(rg *gin.RouterGroup) {
 		aR.POST("/mfa/enable", cont.MfaEnable)
 		aR.POST("/mfa/disable", cont.MfaDisable)
 		aR.GET("/mfa/status", cont.MfaStatus)
+		aR.GET("/adminMfaStatus", cont.AdminMfaStatus)
 	}
 	aRP := rg.Group("/user").Use(middleware.AdminPrivilege())
 	{

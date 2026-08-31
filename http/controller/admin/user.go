@@ -21,22 +21,26 @@ import (
 type User struct {
 }
 
+// adminRootUsername 超级管理员账户（新建/提升管理员时须由该账户凭据授权）
+const adminRootUsername = "admin"
+
 // verifyAdminReconfirm 创建/提升管理员时的二次确认：
-// 校验当前登录管理员输入自己的登录密码，若其开启了 MFA 还需校验动态码。
-// 返回 (是否通过, 错误信息空串)。防止普通会话被冒用后静默提权。
-func verifyAdminReconfirm(c *gin.Context, verifyPassword, mfaCode string) (bool, string) {
-	cur := service.AllService.UserService.CurUser(c)
-	if cur == nil || cur.Id == 0 {
+// 无论当前操作者是谁，都必须输入超级管理员 admin 账户的登录密码；
+// 若 admin 账户开启了 MFA 还需校验其动态码。
+// 返回 (是否通过, 错误信息空串)。防止普通管理员或冒用会话静默提权。
+func verifyAdminReconfirm(verifyPassword, mfaCode string) (bool, string) {
+	admin := service.AllService.UserService.InfoByUsername(adminRootUsername)
+	if admin.Id == 0 {
 		return false, "NoAccess"
 	}
-	// 校验密码
-	ok, _, err := utils.VerifyPassword(cur.Password, verifyPassword)
+	// 校验 admin 账户密码
+	ok, _, err := utils.VerifyPassword(admin.Password, verifyPassword)
 	if err != nil || !ok {
 		return false, "PasswordError"
 	}
-	// 若当前管理员开启了 MFA，必须校验动态码
-	if cur.MfaEnabled {
-		if !service.AllService.UserService.VerifyMfaCode(cur, mfaCode) {
+	// 若 admin 账户开启了 MFA，必须校验其动态码
+	if admin.MfaEnabled {
+		if !service.AllService.UserService.VerifyMfaCode(admin, mfaCode) {
 			return false, "MfaCodeError"
 		}
 	}
@@ -94,9 +98,9 @@ func (ct *User) Create(c *gin.Context) {
 	} else if u.Role == "" {
 		u.Role = "user"
 	}
-	// 新建管理员：必须当前管理员二次确认（自己的密码 + MFA）
+	// 新建管理员：必须 admin 超级账户二次确认（admin 的密码 + MFA）
 	if u.Role == "admin" {
-		if ok, errMsg := verifyAdminReconfirm(c, f.VerifyPassword, f.MfaCode); !ok {
+		if ok, errMsg := verifyAdminReconfirm(f.VerifyPassword, f.MfaCode); !ok {
 			response.Fail(c, 101, response.TranslateMsg(c, errMsg))
 			return
 		}
@@ -184,10 +188,10 @@ func (ct *User) Update(c *gin.Context) {
 	} else if u.Role == "" {
 		u.Role = "user"
 	}
-	// 将普通用户提升为管理员：必须当前管理员二次确认（自己的密码 + MFA）
+	// 将普通用户提升为管理员：必须 admin 超级账户二次确认（admin 的密码 + MFA）
 	oldUser := service.AllService.UserService.InfoById(f.Id)
 	if u.Role == "admin" && (oldUser.Id == 0 || oldUser.Role != "admin") {
-		if ok, errMsg := verifyAdminReconfirm(c, f.VerifyPassword, f.MfaCode); !ok {
+		if ok, errMsg := verifyAdminReconfirm(f.VerifyPassword, f.MfaCode); !ok {
 			response.Fail(c, 101, response.TranslateMsg(c, errMsg))
 			return
 		}
@@ -479,6 +483,16 @@ func (ct *User) MfaDisable(c *gin.Context) {
 func (ct *User) MfaStatus(c *gin.Context) {
 	u := service.AllService.UserService.CurUser(c)
 	response.Success(c, gin.H{"mfa_enabled": u.MfaEnabled})
+}
+
+// AdminMfaStatus 返回 admin 超级账户的 MFA 启用状态（新建/提升管理员二次确认时前端判断是否需填动态码）
+// @Tags 用户
+// @Summary admin 账户 MFA 状态
+// @Router /admin/user/adminMfaStatus [get]
+// @Security token
+func (ct *User) AdminMfaStatus(c *gin.Context) {
+	admin := service.AllService.UserService.InfoByUsername(adminRootUsername)
+	response.Success(c, gin.H{"mfa_enabled": admin.Id > 0 && admin.MfaEnabled})
 }
 
 // MfaReset 管理员强制关闭指定用户的 MFA（用户丢失验证器/恢复码时的救援手段）
