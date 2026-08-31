@@ -137,22 +137,18 @@ jobs:
             zip -r ${{ matrix.job.goos}}-${{ matrix.job.platform }}.${{matrix.job.file_ext}} ./release
           else
             if [ "${{ matrix.job.platform }}" = "arm64" ]; then
-                # 用 curl 下载 musl 交叉工具链（wget 在 runner 上偶发网络故障 exit 4）
-                curl -fL --retry 6 --retry-delay 5 --retry-all-errors -o aarch64-linux-musl-cross.tgz \
-                  https://musl.cc/aarch64-linux-musl-cross.tgz || \
-                curl -fL --retry 6 --retry-delay 5 --retry-all-errors -o aarch64-linux-musl-cross.tgz \
-                  https://more.musl.cc/x86_64-linux-musl/aarch64-linux-musl-cross.tgz
-                tar -xf aarch64-linux-musl-cross.tgz
-                export PATH=$PATH:$PWD/aarch64-linux-musl-cross/bin
-                GOOS=${{ matrix.job.goos }} GOARCH=${{ matrix.job.platform }} CC=aarch64-linux-musl-gcc CGO_LDFLAGS="-static" CGO_ENABLED=1 go build -ldflags "-s -w" -o ./release/apimain ./cmd/apimain.go
+                # GitHub runner 无法连接 musl.cc，改用 zig 交叉编译器（自带 musl libc）
+                curl -fL --retry 5 --retry-all-errors -o zig.tar.xz \
+                  https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz
+                tar xf zig.tar.xz
+                export PATH=$PATH:$PWD/zig-linux-x86_64-0.13.0
+                GOOS=${{ matrix.job.goos }} GOARCH=${{ matrix.job.platform }} CC="zig cc -target aarch64-linux-musl" CGO_LDFLAGS="-static" CGO_ENABLED=1 go build -ldflags "-s -w" -o ./release/apimain ./cmd/apimain.go
             elif [ "${{ matrix.job.platform }}" = "armv7l" ]; then
-                curl -fL --retry 6 --retry-delay 5 --retry-all-errors -o armv7l-linux-musleabihf-cross.tgz \
-                  https://musl.cc/armv7l-linux-musleabihf-cross.tgz || \
-                curl -fL --retry 6 --retry-delay 5 --retry-all-errors -o armv7l-linux-musleabihf-cross.tgz \
-                  https://more.musl.cc/x86_64-linux-musl/armv7l-linux-musleabihf-cross.tgz
-                tar -xf armv7l-linux-musleabihf-cross.tgz
-                export PATH=$PATH:$PWD/armv7l-linux-musleabihf-cross/bin
-                GOOS=${{ matrix.job.goos }} GOARCH=arm GOARM=7 CC=armv7l-linux-musleabihf-gcc CGO_LDFLAGS="-static" CGO_ENABLED=1 go build -ldflags "-s -w" -o ./release/apimain ./cmd/apimain.go
+                curl -fL --retry 5 --retry-all-errors -o zig.tar.xz \
+                  https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz
+                tar xf zig.tar.xz
+                export PATH=$PATH:$PWD/zig-linux-x86_64-0.13.0
+                GOOS=${{ matrix.job.goos }} GOARCH=arm GOARM=7 CC="zig cc -target arm-linux-musleabihf" CGO_LDFLAGS="-static" CGO_ENABLED=1 go build -ldflags "-s -w" -o ./release/apimain ./cmd/apimain.go
             else
               sudo apt-get install musl musl-dev musl-tools -y
               GOOS=${{ matrix.job.goos }} GOARCH=${{ matrix.job.platform }} CC=musl-gcc CGO_LDFLAGS="-static" CGO_ENABLED=1 go build -ldflags "-s -w" -o ./release/apimain ./cmd/apimain.go
