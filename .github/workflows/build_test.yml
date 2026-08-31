@@ -78,9 +78,7 @@ jobs:
           mkdir -p ../resources/admin/
           cp -ar dist/* ../resources/admin/
 
-      - name: tidy
-        run: go mod tidy
-
+      # 移除 go mod tidy：矩阵并发 tidy 会因 Go 模块下载偶发失败阻塞构建。go build 本身会下载所需依赖。
       - name: swag
         run: |
           go run github.com/swaggo/swag/cmd/swag@v1.16.3 init -g cmd/apimain.go --output docs/api --instanceName api --exclude http/controller/admin

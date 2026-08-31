@@ -188,7 +188,9 @@ func (i *Index) Version(c *gin.Context) {
 // @Router /server/info [get]
 func (i *Index) ServerInfo(c *gin.Context) {
 	v := service.AllService.AppService.GetAppVersion()
-	c.JSON(http.StatusOK, gin.H{
+	// 统一返回标准 Response 结构（code=0/message/data），
+	// 否则前端拦截器会因缺少 code 字段误判失败并弹出 "error"。
+	response.Success(c, gin.H{
 		"backend_version": v,
 	})
 }

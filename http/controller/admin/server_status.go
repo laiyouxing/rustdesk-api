@@ -26,10 +26,17 @@ type ServerStatus struct {
 // @Router /server_status [get]
 // @Security token
 func (ct *ServerStatus) Status(c *gin.Context) {
-	results := service.AllService.ServerStatusService.ProbeAll()
+	// 探测与 hbbr 统计并行执行，接口总耗时 ≈ max(探测, hbbr 统计)，
+	// 避免串行叠加超过服务端 write-timeout 导致刷新报错。
+	resultsCh := make(chan []service.ProbeResult, 1)
+	go func() {
+		resultsCh <- service.AllService.ServerStatusService.ProbeAll()
+	}()
+	stats := hbbrStats()
+	results := <-resultsCh
 	response.Success(c, gin.H{
 		"list":       results,
-		"hbbr_stats": hbbrStats(),
+		"hbbr_stats": stats,
 	})
 }
 
@@ -124,7 +131,7 @@ func hbbrStats() gin.H {
 		port = 21117
 	}
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
-	conn, err := net.DialTimeout("tcp", addr, 3*time.Second)
+	conn, err := net.DialTimeout("tcp", addr, 2*time.Second)
 	if err != nil {
 		return gin.H{
 			"available": false,
@@ -133,7 +140,7 @@ func hbbrStats() gin.H {
 		}
 	}
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(3 * time.Second))
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
 	if _, err := conn.Write([]byte("u\n")); err != nil {
 		return gin.H{
 			"available": false,

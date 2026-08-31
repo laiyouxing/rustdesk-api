@@ -3,6 +3,7 @@ package service
 import (
 	"net"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/lejianwen/rustdesk-api/v2/model"
@@ -69,12 +70,20 @@ func (s *ServerStatusService) Probe(m model.ServerStatusMonitor) ProbeResult {
 	return res
 }
 
-// ProbeAll 探测所有启用中的条目（管理员共享）
+// ProbeAll 探测所有启用中的条目（管理员共享，并发探测）
+// 并发探测避免条目过多时串行耗时线性叠加（每条最长 3s），
+// 防止总响应时间超过服务端 write-timeout 导致连接被强制断开。
 func (s *ServerStatusService) ProbeAll() []ProbeResult {
 	list := s.ListAll()
-	results := make([]ProbeResult, 0, len(list))
-	for _, m := range list {
-		results = append(results, s.Probe(m))
+	results := make([]ProbeResult, len(list))
+	var wg sync.WaitGroup
+	for i := range list {
+		wg.Add(1)
+		go func(idx int, m model.ServerStatusMonitor) {
+			defer wg.Done()
+			results[idx] = s.Probe(m)
+		}(i, list[i])
 	}
+	wg.Wait()
 	return results
 }

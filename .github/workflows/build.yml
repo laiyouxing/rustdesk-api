@@ -91,9 +91,8 @@ jobs:
           mkdir -p ../resources/admin/
           cp -ar dist/* ../resources/admin/
 
-      - name: tidy
-        run: go mod tidy
-
+      # 移除 go mod tidy：矩阵 4 个 job 并发 tidy 会因 Go 模块下载偶发失败，
+      # 导致 arm64/armv7l build 失败并连带跳过 Release 发布。go build 本身会下载所需依赖。
       - name: Get tag version
         run: |
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
