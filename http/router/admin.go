@@ -23,6 +23,9 @@ func Init(g *gin.Engine) {
 	adg := g.Group("/api/admin")
 	LoginBind(adg)
 	adg.POST("/user/register", (&admin.User{}).Register)
+	// 管理后台首页需要展示后端版本，但 /api/server/info 是公共路由，
+	// 前端 baseURL 为 /api/admin 会请求到 /api/admin/server/info，这里补充注册。
+	adg.GET("/server/info", (&apic.Index{}).ServerInfo)
 
 	ConfigBind(adg)
 
