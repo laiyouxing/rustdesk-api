@@ -231,6 +231,10 @@ func (us *UserService) Logout(u *model.User, token string) error {
 
 // Delete 删除用户和oauth信息
 func (us *UserService) Delete(u *model.User) error {
+	// 超级管理员（id=1 的初始账户）不可删除
+	if u.Id == 1 {
+		return errors.New("The super admin user (id=1) cannot be deleted")
+	}
 	userCount := us.getAdminUserCount()
 	if userCount <= 1 && us.IsAdmin(u) {
 		return errors.New("The last admin user cannot be deleted")
@@ -273,6 +277,17 @@ func (us *UserService) Delete(u *model.User) error {
 // Update 更新
 func (us *UserService) Update(u *model.User) error {
 	currentUser := us.InfoById(u.Id)
+	// 超级管理员（id=1 的初始账户）必须始终为管理员：若本次更新试图
+	// 降级（role 改为非 admin）或禁用（status=disabled），直接拒绝。
+	// 注意 Updates 会跳过零值字段：role/status 未传时保持零值，需以
+	// "显式改为非 admin / 显式禁用"为准，故仅当字段非空时才判定。
+	if u.Id == 1 {
+		roleChanged := u.Role != "" && u.Role != "admin"
+		statusDisabled := u.Status == model.COMMON_STATUS_DISABLED
+		if roleChanged || statusDisabled {
+			return errors.New("The super admin user (id=1) cannot be demoted or disabled")
+		}
+	}
 	// 如果当前用户是管理员并且 IsAdmin 不为空，进行检查
 	if us.IsAdmin(currentUser) {
 		adminCount := us.getAdminUserCount()
