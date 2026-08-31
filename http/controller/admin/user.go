@@ -524,7 +524,6 @@ func (ct *User) Register(c *gin.Context) {
 	}
 
 	// 注册成功后消耗授权码 + 激活订阅（原子更新防止并发重复使用）
-	subscriptionActivated := false
 	if global.Config.App.InviteOnly && f.InviteCode != "" {
 		ics := &service.InviteCodeService{}
 		ic := ics.InfoByCode(f.InviteCode)
@@ -562,21 +561,14 @@ func (ct *User) Register(c *gin.Context) {
 					"subscription_expire_at": &newExpire,
 					"expired_at":             expiredAt,
 				})
-			subscriptionActivated = true
 		}
 	}
 
-	// 所有注册账户默认永久会员，保证注册后即可正常登录后台与使用客户端。
-	// 若已通过授权码激活订阅，则以授权码为准，不覆盖。
-	if !subscriptionActivated {
-		newExpire := time.Date(9999, 1, 1, 0, 0, 0, 0, time.UTC)
-		global.DB.Model(&model.User{}).Where("id = ?", u.Id).
-			Updates(map[string]interface{}{
-				"subscription_plan":      "permanent",
-				"subscription_expire_at": &newExpire,
-				"expired_at":             0,
-			})
-	}
+	// 登录后台与远程连接是两种独立情况：
+	// 1. 注册用户账户 expired_at=0（永不过期），可正常登录后台；
+	// 2. 远程连接必须付费会员且在有效期内（subscription_expire_at 有效），
+	//    未付费用户 subscription_expire_at 为 nil（status=none），客户端会拒绝连接。
+	// 因此注册时不再默认设置永久订阅，仅当使用授权码激活时才绑定订阅时长。
 
 	if regStatus == model.COMMON_STATUS_DISABLED {
 		// 需要管理员审核
