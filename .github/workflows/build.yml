@@ -100,15 +100,9 @@ jobs:
           elif [ -n "$VERSION_TAG" ]; then
             TAG_VERSION="$VERSION_TAG"
           elif [[ "${GITHUB_REF}" == refs/heads/* ]]; then
-            # 分支 push：自动读取已发布的最大版本号(x.y.z)并 patch+1（如 1.3.10 -> 1.3.11）。
-            # 发布时 action-gh-release 会创建对应 git tag，下次 push 即可继续 +1。
-            TAG_VERSION=$(curl -sS -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              "https://api.github.com/repos/${GITHUB_REPOSITORY}/tags?per_page=100" | \
-              jq -r '[.[].name | select(test("^v?[0-9]+\\.[0-9]+\\.[0-9]+$")) | sub("^v"; "")] | max_by(split(".") | map(tonumber)) // empty' 2>/dev/null | \
-              awk -F. '{print $1"."$2"."($3+1)}')
-            if [ -z "$TAG_VERSION" ]; then
-              TAG_VERSION="1.0.0"
-            fi
+            # 分支 push：不创建带版本号的 Release，改用固定 latest tag
+            # （允许覆盖，保证 Release 列表始终是最新构建）
+            TAG_VERSION="latest"
           else
             TAG_VERSION=""
           fi
@@ -202,15 +196,7 @@ jobs:
           elif [ -n "$VERSION_TAG" ]; then
             TAG_VERSION="$VERSION_TAG"
           elif [[ "${GITHUB_REF}" == refs/heads/* ]]; then
-            # 分支 push：自动读取已发布的最大版本号(x.y.z)并 patch+1（如 1.3.10 -> 1.3.11）。
-            # 发布时 action-gh-release 会创建对应 git tag，下次 push 即可继续 +1。
-            TAG_VERSION=$(curl -sS -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              "https://api.github.com/repos/${GITHUB_REPOSITORY}/tags?per_page=100" | \
-              jq -r '[.[].name | select(test("^v?[0-9]+\\.[0-9]+\\.[0-9]+$")) | sub("^v"; "")] | max_by(split(".") | map(tonumber)) // empty' 2>/dev/null | \
-              awk -F. '{print $1"."$2"."($3+1)}')
-            if [ -z "$TAG_VERSION" ]; then
-              TAG_VERSION="1.0.0"
-            fi
+            TAG_VERSION="latest"
           else
             TAG_VERSION=""
           fi
@@ -274,15 +260,8 @@ jobs:
           elif [ -n "$VERSION_TAG" ]; then
             TAG_VERSION="$VERSION_TAG"
           elif [[ "${GITHUB_REF}" == refs/heads/* ]]; then
-            # 分支 push：自动读取已发布的最大版本号(x.y.z)并 patch+1（如 1.3.10 -> 1.3.11）。
-            # 发布时 action-gh-release 会创建对应 git tag，下次 push 即可继续 +1。
-            TAG_VERSION=$(curl -sS -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              "https://api.github.com/repos/${GITHUB_REPOSITORY}/tags?per_page=100" | \
-              jq -r '[.[].name | select(test("^v?[0-9]+\\.[0-9]+\\.[0-9]+$")) | sub("^v"; "")] | max_by(split(".") | map(tonumber)) // empty' 2>/dev/null | \
-              awk -F. '{print $1"."$2"."($3+1)}')
-            if [ -z "$TAG_VERSION" ]; then
-              TAG_VERSION="1.0.0"
-            fi
+            # 分支 push：更新固定 latest Release（allow_override 覆盖旧产物）
+            TAG_VERSION="latest"
           else
             TAG_VERSION=""
           fi
@@ -294,22 +273,6 @@ jobs:
         with:
           tag_name: ${{ env.TAG_VERSION }}
           name: ${{ env.TAG_VERSION }}
-          allow_override: true
-          files: |
-            artifacts/**/*.tar.gz
-            artifacts/**/*.zip
-            artifacts/**/*.deb
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # 分支 push：除自动版本号 Release 外，额外更新 latest Release（allow_override 覆盖），
-      # 保持 latest 入口始终指向最新构建。
-      - name: Upload to latest Release (branch push)
-        if: env.TAG_VERSION != '' && github.event_name == 'push' && startsWith(github.ref, 'refs/heads/')
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          name: latest
           allow_override: true
           files: |
             artifacts/**/*.tar.gz
