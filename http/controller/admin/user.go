@@ -94,7 +94,14 @@ func (ct *User) Create(c *gin.Context) {
 		response.Fail(c, 101, errList[0])
 		return
 	}
+	// 手动创建用户必须设置初始密码，否则用户无法登录
+	if strings.TrimSpace(f.Password) == "" {
+		response.Fail(c, 101, response.TranslateMsg(c, "PasswordRequired"))
+		return
+	}
 	u := f.ToUser()
+	// 创建时设置初始密码
+	u.Password = f.Password
 	// 兼容旧字段：设置了 is_admin=true 但未传 role 时同步
 	if u.Role == "" && u.IsAdmin != nil && *u.IsAdmin {
 		u.Role = "admin"
@@ -574,6 +581,10 @@ func (ct *User) Register(c *gin.Context) {
 	regStatus := model.StatusCode(global.Config.App.RegisterStatus)
 	// 注册状态可能未配置，默认启用
 	if regStatus != model.COMMON_STATUS_DISABLED && regStatus != model.COMMON_STATUS_ENABLE {
+		regStatus = model.COMMON_STATUS_ENABLE
+	}
+	// 通过授权码注册的用户：直接启用，无需管理员手动启用账户
+	if global.Config.App.InviteOnly && f.InviteCode != "" {
 		regStatus = model.COMMON_STATUS_ENABLE
 	}
 

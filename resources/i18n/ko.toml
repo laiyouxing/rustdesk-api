@@ -111,6 +111,11 @@ description = "Decode oauth user info error."
 one = "인증된 사용자 정보를 구문 분석하지 못했습니다."
 other = "인증된 사용자 정보를 구문 분석하지 못했습니다."
 
+[PasswordRequired]
+description = "Password is required when creating a user."
+one = "사용자 생성 시 초기 비밀번호를 반드시 설정해야 로그인할 수 있습니다."
+other = "사용자 생성 시 초기 비밀번호를 반드시 설정해야 로그인할 수 있습니다."
+
 [OldPasswordError]
 description = "Old password error."
 one = "이전 비밀번호가 잘못되었습니다."

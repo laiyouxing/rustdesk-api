@@ -156,6 +156,11 @@ description = "Decode oauth user info error."
 one = "解析授权用户信息失败。"
 other = "解析授权用户信息失败。"
 
+[PasswordRequired]
+description = "Password is required when creating a user."
+one = "创建用户时必须设置初始密码，否则无法登录。"
+other = "创建用户时必须设置初始密码，否则无法登录。"
+
 [OldPasswordError]
 description = "Old password error."
 one = "旧密码错误。"

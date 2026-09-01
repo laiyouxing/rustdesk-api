@@ -155,6 +155,11 @@ description = "Decode oauth user info error."
 one = "Decode oauth user info error."
 other = "Decode oauth user info error."
 
+[PasswordRequired]
+description = "Password is required when creating a user."
+one = "An initial password is required when creating a user, otherwise they cannot log in."
+other = "An initial password is required when creating a user, otherwise they cannot log in."
+
 [OldPasswordError]
 description = "Old password error."
 one = "Old password error."

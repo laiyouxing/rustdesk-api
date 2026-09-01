@@ -118,6 +118,11 @@ description = "Decode oauth user info error."
 one = "Error al decodificar la información del usuario de Oauth."
 other = "Error al decodificar la información del usuario de Oauth."
 
+[PasswordRequired]
+description = "Password is required when creating a user."
+one = "Se requiere una contraseña inicial al crear el usuario; de lo contrario, no podrá iniciar sesión."
+other = "Se requiere una contraseña inicial al crear el usuario; de lo contrario, no podrá iniciar sesión."
+
 [OldPasswordError]
 description = "Old password error."
 one = "Error con la contraseña anterior."

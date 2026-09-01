@@ -118,6 +118,11 @@ description = "Decode oauth user info error."
 one = "解析 OAuth 使用者資訊錯誤。"
 other = "解析 OAuth 使用者資訊錯誤。"
 
+[PasswordRequired]
+description = "Password is required when creating a user."
+one = "建立使用者時必須設定初始密碼，否則無法登入。"
+other = "建立使用者時必須設定初始密碼，否則無法登入。"
+
 [OldPasswordError]
 description = "Old password error."
 one = "舊密碼錯誤。"
