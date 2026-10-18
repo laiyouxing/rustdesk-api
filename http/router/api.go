@@ -97,6 +97,16 @@ func ApiInit(g *gin.Engine) {
 		frg.GET("/process/config", middleware.ProcessMonitorAuth(), pm.ProcessConfig)
 	}
 
+	// 打洞地址交换（走 api-server，免登录设备可用）：
+	// 双方在此交换 STUN 探测到的公网地址，使 UDP 打洞可以在建立中继之前完成，
+	// 连接建立时直接使用直连，消除"先中继再打洞再换流"的双连接与切换竞态。
+	{
+		pu := &api.Punch{}
+		frg.POST("/punch/addr", middleware.ProcessMonitorAuth(), pu.Report)
+		frg.GET("/punch/addr", middleware.ProcessMonitorAuth(), pu.Get)
+		frg.GET("/punch/addr/inbox", middleware.ProcessMonitorAuth(), pu.Inbox)
+	}
+
 	// 订阅支付回调（公开）
 	{
 		sc := &api.SubscribeController{}
