@@ -8,18 +8,39 @@ import (
 // PunchAddrTTL 打洞地址有效期（秒）。超过即视为设备已离线/放弃连接。
 const PunchAddrTTL = 60
 
+// 地址来源（PunchAddr.Kind）
+const (
+	PunchKindLastSuccess = "last_success" // 上一会话成功用过的映射
+	PunchKindStunPrimary = "stun_primary" // 主 STUN 映射
+	PunchKindStunAlt     = "stun_alt"     // 备 STUN 映射（对称 NAT 下不同）
+	PunchKindUpnp        = "upnp"         // UPnP 外部映射
+	PunchKindLan         = "lan"          // 内网网卡地址
+	PunchKindV6          = "v6"           // 公网 IPv6
+	PunchKindTcp         = "tcp"          // TCP 同步打开端口
+)
+
 // PunchAddr 一个可打洞的地址
 type PunchAddr struct {
 	Addr     string
 	AddrType string
+	Kind     string
+	Priority int32
 	Delta    int32
 	SyncAtMs int64
+}
+
+// PunchMeta 设备网络环境
+type PunchMeta struct {
+	NatType  string
+	Upnp     bool
+	ViaProxy bool
 }
 
 // PunchEntry 一次上报
 type PunchEntry struct {
 	PeerId    string
 	Target    string
+	Meta      PunchMeta
 	Addrs     []PunchAddr
 	UpdatedAt int64
 }
@@ -27,9 +48,10 @@ type PunchEntry struct {
 // PunchExchangeService 打洞地址交换服务。
 //
 // 设计目的：让 UDP 打洞在**建立中继之前**完成——双方通过 api-server
-// 交换 STUN 探测到的公网地址，控制端拿到地址后立即打洞，成功则直接在
-// 直连上走完整握手（secure_connection + Login），不再需要"先中继、
-// 再打洞、再换流"，从根本上消除双连接与换流竞态。
+// 交换各自探测到的全部候选地址（多 STUN 映射 / UPnP / LAN / IPv6 / TCP /
+// 上一会话成功地址）与网络环境（NAT 类型、是否代理），控制端拿到地址后
+// 立即打洞，成功则直接在直连上走完整握手，不再需要"先中继、再打洞、
+// 再换流"，从根本上消除双连接与换流竞态。
 //
 // 纯内存存储 + TTL，不落库：
 //   - byPeer: 设备自己上报的地址（控制端拉取对端地址用）
@@ -75,7 +97,7 @@ func (s *PunchExchangeService) cleanupLoop() {
 }
 
 // Upsert 上报。peerId 为上报者；target 非空表示"我想连 target"。
-func (s *PunchExchangeService) Upsert(peerId, target string, addrs []PunchAddr) {
+func (s *PunchExchangeService) Upsert(peerId, target string, meta PunchMeta, addrs []PunchAddr) {
 	if peerId == "" || len(addrs) == 0 {
 		return
 	}
@@ -84,6 +106,7 @@ func (s *PunchExchangeService) Upsert(peerId, target string, addrs []PunchAddr) 
 	entry := &PunchEntry{
 		PeerId:    peerId,
 		Target:    target,
+		Meta:      meta,
 		Addrs:     addrs,
 		UpdatedAt: time.Now().Unix(),
 	}
@@ -96,14 +119,17 @@ func (s *PunchExchangeService) Upsert(peerId, target string, addrs []PunchAddr) 
 	}
 }
 
-// GetByPeer 拉取某设备自己上报的地址（控制端用：peer_id = 被控端 id）
-func (s *PunchExchangeService) GetByPeer(peerId string) []PunchAddr {
+// GetByPeer 拉取某设备自己上报的地址与网络环境（控制端用：peer_id = 被控端 id）
+func (s *PunchExchangeService) GetByPeer(peerId string) (*PunchEntry, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	if e, ok := s.byPeer[peerId]; ok {
-		return e.Addrs
+		// 返回浅拷贝，避免调用方持有锁期间的数据被后续覆盖
+		cp := *e
+		cp.Addrs = append([]PunchAddr(nil), e.Addrs...)
+		return &cp, true
 	}
-	return nil
+	return nil, false
 }
 
 // GetInbox 拉取"想连我的设备"列表（被控端用：peer_id = 自己）
@@ -112,7 +138,9 @@ func (s *PunchExchangeService) GetInbox(peerId string) []*PunchEntry {
 	defer s.mu.RUnlock()
 	out := make([]*PunchEntry, 0, len(s.inbox[peerId]))
 	for _, e := range s.inbox[peerId] {
-		out = append(out, e)
+		cp := *e
+		cp.Addrs = append([]PunchAddr(nil), e.Addrs...)
+		out = append(out, &cp)
 	}
 	return out
 }
