@@ -135,6 +135,10 @@ func (p *Punch) Inbox(c *gin.Context) {
 				"upnp":      e.Meta.Upnp,
 				"via_proxy": e.Meta.ViaProxy,
 			},
+			// 请求发起时间（Unix 秒）。被控端用它区分"同一请求的重复轮询"和
+			// "控制端重新发起的新请求"——仅靠地址+sync_at 无法区分同一 8s
+			// 同步边界内的两次连接尝试。
+			"updated_at": e.UpdatedAt,
 		})
 	}
 	response.Success(c, gin.H{"requests": out})
