@@ -493,6 +493,17 @@ func DatabaseAutoUpdate() {
 		}
 	}
 
+	// 修复历史数据：role 与 is_admin 不一致。原管理员降级时旧逻辑只改 role、
+	// 未同步 is_admin（Updates 跳过 nil），导致 is_admin 残留 true，
+	// IsAdmin() 仍判定为管理员（普通用户也能进后台看系统设置）。
+	// 以 role 为准双向同步；role 为空的老数据不动（IsAdmin 仍按 is_admin 兼容）。
+	if err := db.Exec("UPDATE users SET is_admin = 1 WHERE role = 'admin' AND (is_admin IS NULL OR is_admin = 0)").Error; err != nil {
+		global.Logger.Errorf("sync is_admin for role=admin err: %v", err)
+	}
+	if err := db.Exec("UPDATE users SET is_admin = 0 WHERE role = 'user' AND is_admin = 1").Error; err != nil {
+		global.Logger.Errorf("sync is_admin for role=user err: %v", err)
+	}
+
 	// 终极兜底：用原生 SQL 确保关键表存在（应对 AutoMigrate 可能因 GORM 版本差异失败的场景）
 	ensureTable(db, &model.AppRelease{}, "app_releases", `CREATE TABLE IF NOT EXISTS app_releases (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,

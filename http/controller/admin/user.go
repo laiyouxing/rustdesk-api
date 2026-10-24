@@ -102,11 +102,21 @@ func (ct *User) Create(c *gin.Context) {
 	u := f.ToUser()
 	// 创建时设置初始密码
 	u.Password = f.Password
-	// 兼容旧字段：设置了 is_admin=true 但未传 role 时同步
-	if u.Role == "" && u.IsAdmin != nil && *u.IsAdmin {
-		u.Role = "admin"
-	} else if u.Role == "" {
-		u.Role = "user"
+	// role 兜底：未传 role 时按 is_admin 推断
+	if u.Role == "" {
+		if u.IsAdmin != nil && *u.IsAdmin {
+			u.Role = "admin"
+		} else {
+			u.Role = "user"
+		}
+	}
+	// 与 Update 一致：以 role 为准同步 is_admin，保证 IsAdmin() 两字段一致
+	if u.Role == "admin" {
+		isAdminTrue := true
+		u.IsAdmin = &isAdminTrue
+	} else {
+		isAdminFalse := false
+		u.IsAdmin = &isAdminFalse
 	}
 	// 新建管理员：必须超级管理员账户二次确认（其用户名 + 密码 + MFA）
 	if u.Role == "admin" {
@@ -192,11 +202,24 @@ func (ct *User) Update(c *gin.Context) {
 		return
 	}
 	u := f.ToUser()
-	// 兼容旧字段：设置了 is_admin=true 但未传 role 时同步
-	if u.Role == "" && u.IsAdmin != nil && *u.IsAdmin {
-		u.Role = "admin"
-	} else if u.Role == "" {
-		u.Role = "user"
+	// role 兜底：未传 role 时按 is_admin 推断
+	if u.Role == "" {
+		if u.IsAdmin != nil && *u.IsAdmin {
+			u.Role = "admin"
+		} else {
+			u.Role = "user"
+		}
+	}
+	// IsAdmin() 中 role=="admin" 或 is_admin=true 任一为真即管理员。
+	// 编辑时若只改 role 不同步 is_admin，Updates 会跳过 nil 的 is_admin，
+	// 导致降级后 is_admin 仍为 true（普通用户仍能进后台看系统设置）。
+	// 以 role 为准双向同步 is_admin。
+	if u.Role == "admin" {
+		isAdminTrue := true
+		u.IsAdmin = &isAdminTrue
+	} else {
+		isAdminFalse := false
+		u.IsAdmin = &isAdminFalse
 	}
 	// 将普通用户提升为管理员：必须超级管理员账户二次确认（其用户名 + 密码 + MFA）
 	oldUser := service.AllService.UserService.InfoById(f.Id)
@@ -210,6 +233,11 @@ func (ct *User) Update(c *gin.Context) {
 	if err != nil {
 		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
 		return
+	}
+	// 管理员身份发生变化（提升/降级）时，清除该用户所有会话令牌，强制重新登录，
+	// 避免降级后其旧后台会话仍持管理员权限继续访问系统设置等管理接口。
+	if service.AllService.UserService.IsAdmin(oldUser) != service.AllService.UserService.IsAdmin(u) {
+		_ = service.AllService.UserService.FlushToken(u)
 	}
 	recordOpLog(c, u, "update", "管理员编辑账户")
 	response.Success(c, nil)
