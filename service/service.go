@@ -38,6 +38,7 @@ type Service struct {
 	*AccountOpLogService
 	*AddressBookOpLogService
 	*LogCleanupService
+	*AuditRetentionService
 	*PunchExchangeService
 }
 

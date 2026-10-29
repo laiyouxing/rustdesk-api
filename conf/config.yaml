@@ -70,9 +70,16 @@ rustdesk:
 
 # 日志输出配置
 logger:
-  path: "./runtime/log.txt" # 日志文件存储路径
+  path: "./runtime/log.txt" # 日志文件基名：实际按天写成 log-YYYY-MM-DD.txt
   level: "info" # 日志打印级别：trace最详细>debug>info>warn>error>fatal仅致命错误
   report-caller: true # 是否打印日志调用代码行号、文件名称，true开启方便排错
+  max-days: 30 # 日志保留天数（按天轮转，跨天自动删除更早的；<=0 用默认 30）
+
+# 审计记录保留策略
+audit:
+  # 连接日志(audit_conn)/文件传输日志(audit_file)/直连上报(punch_direct_ok)
+  # 超过该天数自动删除。<=0 用默认 90。后台手动删除仍然可用。
+  retention-days: 90
 
 # 全局网络代理配置
 proxy:

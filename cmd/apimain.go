@@ -56,8 +56,10 @@ var rootCmd = &cobra.Command{
 		go service.AllService.AuditService.StartStaleConnCloseSweep()
 		// 基于心跳 conns 的快速连接心跳检测（60s 超时），检测异常断开
 		go service.AllService.AuditService.StartConnHeartbeatSweep()
-		// 日志目录磁盘空间不足自动清理
+		// 日志目录磁盘空间不足自动清理（兜底；日常保留策略在 lib/logger 按天轮转里）
 		go service.AllService.LogCleanupService.StartLogCleanupSweep()
+		// 审计记录保留策略：默认保留 90 天（audit.retention-days 可配）
+		go service.AllService.AuditRetentionService.StartAuditRetentionSweep()
 	},
 }
 
@@ -127,11 +129,12 @@ func InitGlobal() {
 	//配置解析
 	global.Viper = config.Init(&global.Config, global.ConfigPath)
 
-	//日志
+	//日志（按天轮转：{path 前缀}-{YYYY-MM-DD}{扩展名}，保留 logger.max-days 天）
 	global.Logger = logger.New(&logger.Config{
 		Path:         global.Config.Logger.Path,
 		Level:        global.Config.Logger.Level,
 		ReportCaller: global.Config.Logger.ReportCaller,
+		MaxDays:      global.Config.Logger.EffectiveMaxDays(),
 	})
 
 	// 启动早期（配置已加载、日志已就绪，HTTP 服务尚未启动）打印时钟快照，

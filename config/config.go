@@ -83,6 +83,8 @@ type Config struct {
 	Ldap       Ldap
 	Cors       Cors
 	Server     Server
+	// Audit 审计记录保留策略（默认 90 天）
+	Audit Audit
 	// Payment 支付平台配置
 	Payment PaymentConfig `mapstructure:"payment"`
 	// Subscription 订阅套餐配置
