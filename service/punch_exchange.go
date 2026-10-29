@@ -1,8 +1,12 @@
 package service
 
 import (
+	"strings"
 	"sync"
 	"time"
+
+	"github.com/lejianwen/rustdesk-api/v2/model"
+	"gorm.io/gorm"
 )
 
 // PunchAddrTTL 打洞地址有效期（秒）。超过即视为设备已离线/放弃连接。
@@ -216,14 +220,46 @@ func splitPair(k string) (host, guest string) {
 }
 
 // RecordDirectOk 记录一次直连成功上报。
+//
+// 同时做两件事：
+//  1. 写内存（供执法巡检"是否已登记"判定，TTL 短）；
+//  2. 落库（供后台审计页长期追溯，这是合规留痕的主要价值）。
 func (s *PunchExchangeService) RecordDirectOk(e *DirectOkEntry) {
 	if e.PeerId == "" || e.Target == "" {
 		return
 	}
 	e.UpdatedAt = time.Now().Unix()
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.directOk[pairKey(e.PeerId, e.Target)] = e
+	s.mu.Unlock() // 先放锁再写库：不在持锁状态下做 DB IO
+
+	rec := &model.PunchDirectOk{
+		PeerId:     e.PeerId,
+		Target:     e.Target,
+		ConnType:   e.ConnType,
+		PublicAddr: e.PublicAddr,
+		LanAddrs:   strings.Join(e.LanAddrs, ","),
+		MacHashes:  strings.Join(e.MacHashes, ","),
+	}
+	if err := DB.Create(rec).Error; err != nil {
+		// 落库失败不影响执法判定（内存里已有），只记日志
+		Logger.Errorf("RecordDirectOk persist err: %v", err)
+	}
+}
+
+// DirectOkList 后台审计页：直连上报记录分页列表。
+func (s *PunchExchangeService) DirectOkList(page, pageSize uint, where func(tx *gorm.DB)) (res *model.PunchDirectOkList) {
+	res = &model.PunchDirectOkList{}
+	res.Page = int64(page)
+	res.PageSize = int64(pageSize)
+	tx := DB.Model(&model.PunchDirectOk{})
+	if where != nil {
+		where(tx)
+	}
+	tx.Count(&res.Total)
+	tx.Scopes(Paginate(page, pageSize))
+	tx.Find(&res.PunchDirectOks)
+	return
 }
 
 func (s *PunchExchangeService) hasOutcomeLocked(peerId, target string) bool {

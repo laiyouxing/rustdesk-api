@@ -298,6 +298,12 @@ func AuditBind(rg *gin.RouterGroup) {
 	afR.GET("/list", cont.FileList)
 	afR.POST("/delete", cont.FileDelete)
 	afR.POST("/batchDelete", cont.BatchFileDelete)
+	// 直连上报记录（合规审计）
+	pdCont := &admin.PunchDirectOk{}
+	pR := rg.Group("/punch_direct_ok").Use(middleware.AdminPrivilege())
+	pR.GET("/list", pdCont.List)
+	pR.POST("/delete", pdCont.Delete)
+	pR.POST("/batchDelete", pdCont.BatchDelete)
 }
 func AddressBookCollectionBind(rg *gin.RouterGroup) {
 	aR := rg.Group("/address_book_collection").Use(middleware.AdminPrivilege())

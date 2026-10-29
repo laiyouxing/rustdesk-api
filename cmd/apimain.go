@@ -486,6 +486,7 @@ func DatabaseAutoUpdate() {
 		&model.Announcement{},
 		&model.AccountOpLog{},
 		&model.AddressBookOpLog{},
+		&model.PunchDirectOk{},
 	}
 	for _, m := range fallbackModels {
 		if err := db.AutoMigrate(m); err != nil {
