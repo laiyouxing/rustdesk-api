@@ -8,6 +8,34 @@ import (
 // PunchAddrTTL 打洞地址有效期（秒）。超过即视为设备已离线/放弃连接。
 const PunchAddrTTL = 60
 
+// PunchDirectGrace 直连上报宽限期（秒）。
+// 客户端直连建立后必须在此时限内把两端网络标识上报上来；超时未收到两端
+// 上报、且该对端没有活跃的中继会话，则判定为"未登记的直连"，下发
+// disconnect 强制断开该会话。
+const PunchDirectGrace = 30
+
+// PunchDirectOkTTL 直连上报记录有效期（秒）。
+const PunchDirectOkTTL = 300
+
+// DirectOkEntry 一条直连成功上报（合规审计用）。
+type DirectOkEntry struct {
+	PeerId     string
+	Target     string
+	ConnType   string // direct_v4 / direct_v6
+	PublicAddr string
+	LanAddrs   []string
+	MacHashes  []string
+	UpdatedAt  int64
+}
+
+// directPending 一次"打算直连"的登记，由带 target 的地址上报产生。
+// 必须与 byPeer 分开存：设备周期性上报自己地址时 target 为空，
+// 若复用 byPeer 会把意图覆盖掉，巡检就永远看不到。
+type directPending struct {
+	Target    string
+	CreatedAt int64
+}
+
 // 地址来源（PunchAddr.Kind）
 const (
 	PunchKindLastSuccess = "last_success" // 上一会话成功用过的映射
@@ -60,16 +88,27 @@ type PunchExchangeService struct {
 	mu     sync.RWMutex
 	byPeer map[string]*PunchEntry
 	inbox  map[string]map[string]*PunchEntry
+	// 直连合规上报与执法状态（见文件末尾）
+	directOk    map[string]*DirectOkEntry // key: "A|B"
+	pending     map[string]directPending  // key: "A|B"，一次直连意图
+	strikes     map[string]int            // key: "A|B"，连续确认"无上报"的轮数
+	disconnects map[string][]int          // peerId -> 待下发的 connID 列表
 }
 
 func NewPunchExchangeService() *PunchExchangeService {
 	s := &PunchExchangeService{
-		byPeer: make(map[string]*PunchEntry),
-		inbox:  make(map[string]map[string]*PunchEntry),
+		byPeer:      make(map[string]*PunchEntry),
+		inbox:       make(map[string]map[string]*PunchEntry),
+		directOk:    make(map[string]*DirectOkEntry),
+		pending:     make(map[string]directPending),
+		strikes:     make(map[string]int),
+		disconnects: make(map[string][]int),
 	}
 	go s.cleanupLoop()
 	return s
 }
+
+func pairKey(a, b string) string { return a + "|" + b }
 
 func (s *PunchExchangeService) cleanupLoop() {
 	ticker := time.NewTicker(10 * time.Second)
@@ -92,8 +131,113 @@ func (s *PunchExchangeService) cleanupLoop() {
 				delete(s.inbox, t)
 			}
 		}
+		for k, v := range s.directOk {
+			if now-v.UpdatedAt > PunchDirectOkTTL {
+				delete(s.directOk, k)
+			}
+		}
+		// 收集需要执法的意图（在锁内快照，锁外查库，避免持锁做 DB IO）
+		type suspect struct {
+			host, guest string
+			key         string
+		}
+		var suspects []suspect
+		for k, p := range s.pending {
+			if now-p.CreatedAt <= PunchDirectGrace {
+				continue // 宽限期内，等上报
+			}
+			host, guest := splitPair(k)
+			// 任一方向有上报（直连成功 direct_v4/direct_v6，或回退中继 relay）
+			// 即视为已登记，清理意图。
+			//
+			// 为什么"回退中继"也算合规：打洞失败回退中继是正常路径，此时不会
+			// 有直连上报。若不认这条，服务端会把正常的中继会话误判成
+			// "未登记的直连"而强制断开。
+			if s.hasOutcomeLocked(host, guest) || s.hasOutcomeLocked(guest, host) {
+				delete(s.pending, k)
+				continue
+			}
+			suspects = append(suspects, suspect{host: host, guest: guest, key: k})
+		}
 		s.mu.Unlock()
+
+		// 锁外判定（要查库，不能持锁）。
+		//
+		// 二次确认（strikes >= 2）再断开：客户端的上报是 fire-and-forget，
+		// 网络抖动时可能整体丢失一次。若一轮没看到上报就断，会把正常的
+		// 中继回退会话误杀。要求连续两轮（约 10s 间隔）都确认"无任何上报"
+		// 才动手，足以过滤瞬时丢包。
+		for _, sp := range suspects {
+			connId := AllService.AuditService.ActiveConnIdByPair(sp.host, sp.guest)
+			if connId == 0 {
+				connId = AllService.AuditService.ActiveConnIdByPair(sp.guest, sp.host)
+			}
+			if connId == 0 {
+				// 没有活跃会话：打洞失败且未回退/已结束，不必断开。
+				// 意图不清，交给 TTL 自然过期。
+				s.mu.Lock()
+				delete(s.strikes, sp.key)
+				s.mu.Unlock()
+				continue
+			}
+			s.mu.Lock()
+			s.strikes[sp.key]++
+			strikes := s.strikes[sp.key]
+			if strikes < 2 {
+				s.mu.Unlock()
+				Logger.Infof(
+					"direct-ok missing between %s and %s, strike %d/%d (grace %ds)",
+					sp.host, sp.guest, strikes, 2, PunchDirectGrace,
+				)
+				continue
+			}
+			// 只下发给 host：connId 取自 host 侧的审计记录，对 guest 侧
+			// 的 conn id 无意义，错发可能断掉 guest 的其它会话。
+			// 断开 host 一条即可，guest 会收到对端关闭。
+			s.disconnects[sp.host] = append(s.disconnects[sp.host], int(connId))
+			delete(s.pending, sp.key)
+			delete(s.strikes, sp.key)
+			s.mu.Unlock()
+			Logger.Infof(
+				"direct-ok missing between %s and %s (grace %ds), forcing disconnect conn=%d",
+				sp.host, sp.guest, PunchDirectGrace, connId,
+			)
+		}
 	}
+}
+
+func splitPair(k string) (host, guest string) {
+	for i := 0; i < len(k); i++ {
+		if k[i] == '|' {
+			return k[:i], k[i+1:]
+		}
+	}
+	return k, ""
+}
+
+// RecordDirectOk 记录一次直连成功上报。
+func (s *PunchExchangeService) RecordDirectOk(e *DirectOkEntry) {
+	if e.PeerId == "" || e.Target == "" {
+		return
+	}
+	e.UpdatedAt = time.Now().Unix()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.directOk[pairKey(e.PeerId, e.Target)] = e
+}
+
+func (s *PunchExchangeService) hasOutcomeLocked(peerId, target string) bool {
+	_, ok := s.directOk[pairKey(peerId, target)]
+	return ok
+}
+
+// PopDisconnects 取出并清空某设备待下发的断开指令（由心跳带出）。
+func (s *PunchExchangeService) PopDisconnects(peerId string) []int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ids := s.disconnects[peerId]
+	delete(s.disconnects, peerId)
+	return ids
 }
 
 // Upsert 上报。peerId 为上报者；target 非空表示"我想连 target"。
@@ -116,6 +260,13 @@ func (s *PunchExchangeService) Upsert(peerId, target string, meta PunchMeta, add
 			s.inbox[target] = make(map[string]*PunchEntry)
 		}
 		s.inbox[target][peerId] = entry
+		// 记录一次"打算直连"的意图，供宽限期后校验直连上报是否到位。
+		// 已存在同 pair 的意图时只刷新时间，不重置——否则控制端重连时
+		// 会不断把宽限期往后推，永远等不到执法。
+		k := pairKey(peerId, target)
+		if _, ok := s.pending[k]; !ok {
+			s.pending[k] = directPending{Target: target, CreatedAt: time.Now().Unix()}
+		}
 	}
 }
 

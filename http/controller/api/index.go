@@ -156,6 +156,14 @@ func (i *Index) Heartbeat(c *gin.Context) {
 		}
 	}
 
+	// 直连合规执法：把待下发的强制断开指令随心跳带出去。
+	// 客户端 sync 收到 disconnect 后会主动断开对应的 conn_id。
+	// 注意这条通道走 HTTP 心跳，与数据传输方式无关——即使是 P2P 直连
+	// 会话也能被切断（主机侧心跳一直在跑）。
+	if ids := service.AllService.PunchExchangeService.PopDisconnects(info.Id); len(ids) > 0 {
+		resp["disconnect"] = ids
+	}
+
 	c.JSON(http.StatusOK, resp)
 }
 

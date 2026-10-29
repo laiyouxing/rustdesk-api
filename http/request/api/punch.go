@@ -41,3 +41,17 @@ type PunchAddrForm struct {
 type PunchAddrQuery struct {
 	PeerId string `json:"peer_id" form:"peer_id"`
 }
+
+// PunchDirectOkForm 直连建立成功后的合规上报。
+//
+// 客户端在直连（v4/v6）握手成功后立即上报；服务端若在宽限期内未收到两端
+// 上报，会通过心跳下发 disconnect 强制断开该会话。
+// 注意 MacHashes 是**哈希**，客户端不上报原始 MAC。
+type PunchDirectOkForm struct {
+	PeerId     string   `json:"peer_id"`
+	Target     string   `json:"target"`
+	ConnType   string   `json:"conn_type"`   // direct_v4 | direct_v6
+	PublicAddr string   `json:"public_addr"` // 本机公网地址
+	LanAddrs   []string `json:"lan_addrs"`   // 本机内网地址
+	MacHashes  []string `json:"mac_hashes"`  // 本机 MAC 哈希（不含原始值）
+}

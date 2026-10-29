@@ -70,6 +70,21 @@ func (as *AuditService) ConnInfoById(id uint) (res *model.AuditConn) {
 	return
 }
 
+// ActiveConnIdByPair 查 (peerId 作为被控端, fromPeer 作为控制端) 的进行中连接 id。
+// 没有进行中的会话返回 0。
+//
+// 用于直连合规执法：设备上报"我想连 target"之后若宽限期内没收到直连上报，
+// 需要定位"要断哪条会话"。close_time = 0 表示仍在进行中。
+func (as *AuditService) ActiveConnIdByPair(peerId, fromPeer string) int64 {
+	if peerId == "" || fromPeer == "" {
+		return 0
+	}
+	res := &model.AuditConn{}
+	DB.Where("peer_id = ? and from_peer = ? and close_time = 0", peerId, fromPeer).
+		Order("id desc").First(res)
+	return res.ConnId
+}
+
 // FileInfoById
 func (as *AuditService) FileInfoById(id uint) (res *model.AuditFile) {
 	res = &model.AuditFile{}

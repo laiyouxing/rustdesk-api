@@ -2,6 +2,7 @@ package api
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/lejianwen/rustdesk-api/v2/global"
 	requstform "github.com/lejianwen/rustdesk-api/v2/http/request/api"
 	"github.com/lejianwen/rustdesk-api/v2/http/response"
 	"github.com/lejianwen/rustdesk-api/v2/service"
@@ -142,4 +143,34 @@ func (p *Punch) Inbox(c *gin.Context) {
 		})
 	}
 	response.Success(c, gin.H{"requests": out})
+}
+
+// DirectOk 直连建立成功后的合规上报
+// @Tags 打洞地址交换
+// @Summary 上报直连成功（两端网络标识）
+// @Description 客户端直连成功后必须上报；服务端宽限期内未收到两端上报会下发强制断开
+// @Accept json
+// @Produce json
+// @Param body body api.PunchDirectOkForm true "上报内容"
+// @Success 200 {object} response.Response
+// @Router /punch/direct-ok [post]
+func (p *Punch) DirectOk(c *gin.Context) {
+	f := &requstform.PunchDirectOkForm{}
+	if err := c.ShouldBindJSON(f); err != nil || f.PeerId == "" || f.Target == "" {
+		response.Fail(c, 101, "参数错误")
+		return
+	}
+	service.AllService.PunchExchangeService.RecordDirectOk(&service.DirectOkEntry{
+		PeerId:     f.PeerId,
+		Target:     f.Target,
+		ConnType:   f.ConnType,
+		PublicAddr: f.PublicAddr,
+		LanAddrs:   f.LanAddrs,
+		MacHashes:  f.MacHashes,
+	})
+	global.Logger.Infof(
+		"direct-ok: %s -> %s type=%s public=%s lan=%v mac=%d",
+		f.PeerId, f.Target, f.ConnType, f.PublicAddr, f.LanAddrs, len(f.MacHashes),
+	)
+	response.Success(c, gin.H{"ok": true})
 }

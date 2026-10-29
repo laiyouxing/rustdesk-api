@@ -105,6 +105,8 @@ func ApiInit(g *gin.Engine) {
 		frg.POST("/punch/addr", middleware.ProcessMonitorAuth(), pu.Report)
 		frg.GET("/punch/addr", middleware.ProcessMonitorAuth(), pu.Get)
 		frg.GET("/punch/addr/inbox", middleware.ProcessMonitorAuth(), pu.Inbox)
+		// 直连合规上报：宽限期内未收到两端上报会触发强制断开
+		frg.POST("/punch/direct-ok", middleware.ProcessMonitorAuth(), pu.DirectOk)
 	}
 
 	// 订阅支付回调（公开）
