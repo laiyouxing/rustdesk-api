@@ -220,6 +220,28 @@ func migrateLegacyFile(path string) {
 	_ = os.Rename(path, dst)
 }
 
+// SetMaxDays 运行时修改日志保留天数（后台界面可配），并立即按新值清理一次。
+// 未配置文件日志时为空操作。
+func SetMaxDays(n int) {
+	if curWriter == nil {
+		return
+	}
+	curWriter.mu.Lock()
+	defer curWriter.mu.Unlock()
+	curWriter.maxDays = n
+	curWriter.pruneLocked()
+}
+
+// CurrentMaxDays 返回当前生效的保留天数（未配置文件日志时返回 0）。
+func CurrentMaxDays() int {
+	if curWriter == nil {
+		return 0
+	}
+	curWriter.mu.Lock()
+	defer curWriter.mu.Unlock()
+	return curWriter.maxDays
+}
+
 func New(c *Config) *log.Logger {
 	log.SetFormatter(&nested.Formatter{
 		// HideKeys:        true,

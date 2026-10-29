@@ -356,6 +356,14 @@ func ConfigBind(rg *gin.RouterGroup) {
 	aRf.GET("/get", rs.ConfigFileGet)
 	aRf.POST("/update", rs.ConfigFileUpdate)
 
+	// 保留策略（日志/审计保留天数）：后台可配，保存后立即生效
+	// 注意：ConfigBind 在 adg.Use(BackendUserAuth()) 之前调用，所以这里必须
+	// 自己带上 BackendUserAuth，否则会变成未登录可访问。
+	rp := &admin.Retention{}
+	aRr := rg.Group("/retention").Use(middleware.BackendUserAuth(), middleware.AdminPrivilege())
+	aRr.GET("/info", rp.Info)
+	aRr.POST("/update", rp.Update)
+
 	// 重启服务：仅管理员
 	aR.POST("/restart", middleware.AdminPrivilege(), rs.ServiceRestart)
 }

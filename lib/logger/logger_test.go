@@ -132,6 +132,35 @@ func TestMigrateLegacyFileNoOverwrite(t *testing.T) {
 	}
 }
 
+// SetMaxDays 应热更新保留天数并立即按新值清理
+func TestSetMaxDaysPrunesImmediately(t *testing.T) {
+	dir := t.TempDir()
+	tenDaysAgo := time.Now().AddDate(0, 0, -10).Format(dateLayout)
+	old := fileNameFor(dir, "log", ".txt", tenDaysAgo)
+	if err := os.WriteFile(old, []byte("x"), 0644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	saved := curWriter
+	curWriter = &dailyFile{dir: dir, prefix: "log", ext: ".txt", maxDays: 30}
+	defer func() { curWriter = saved }()
+
+	// 保留 30 天时不该删
+	curWriter.pruneLocked()
+	if _, err := os.Stat(old); err != nil {
+		t.Fatalf("10 天前的日志在保留 30 天时不应删除: %v", err)
+	}
+
+	// 改成保留 5 天后应立即被清掉
+	SetMaxDays(5)
+	if _, err := os.Stat(old); !os.IsNotExist(err) {
+		t.Fatalf("改成保留 5 天后，10 天前的日志应被删除")
+	}
+	if got := CurrentMaxDays(); got != 5 {
+		t.Fatalf("CurrentMaxDays = %d, want 5", got)
+	}
+}
+
 // IsOwnLogFile 只认本前缀 + 日期命名 + 本扩展名
 func TestIsOwnLogFile(t *testing.T) {
 	saved := curWriter

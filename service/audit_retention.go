@@ -34,14 +34,16 @@ func (s *AuditRetentionService) StartAuditRetentionSweep() {
 	}
 }
 
+// PruneNow 立即按当前生效策略清理一次（供后台"保存后立即生效"使用）。
+func (s *AuditRetentionService) PruneNow() int64 {
+	return s.pruneOnce()
+}
+
 // pruneOnce 执行一次清理，返回本轮删除的总条数。
 func (s *AuditRetentionService) pruneOnce() int64 {
-	days := 0
-	if Config != nil {
-		days = Config.Audit.EffectiveRetentionDays()
-	} else {
-		days = 90
-	}
+	// 优先级：system_settings 表 > config.yaml > 默认 90 天。
+	// 后台改完立即生效，下次巡检（最多 12 小时）就会用新值。
+	days := EffectiveAuditRetentionDays()
 	cutoff := time.Now().AddDate(0, 0, -days)
 
 	total := int64(0)

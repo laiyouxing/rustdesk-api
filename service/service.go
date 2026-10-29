@@ -39,6 +39,7 @@ type Service struct {
 	*AddressBookOpLogService
 	*LogCleanupService
 	*AuditRetentionService
+	*SettingService
 	*PunchExchangeService
 }
 
@@ -69,6 +70,11 @@ func New(c *config.Config, g *gorm.DB, l *log.Logger, j *jwt.Jwt, lo lock.Locker
 	AllService.InviteCodeService = NewInviteCodeService()
 	AllService.AnnouncementService = &AnnouncementService{}
 	AllService.PunchExchangeService = NewPunchExchangeService()
+	// 无状态服务也要显式初始化：虽可对 nil 接收者调用不碰字段的方法，
+	// 但那属于依赖巧合，迟早踩坑。
+	AllService.SettingService = &SettingService{}
+	AllService.AuditRetentionService = &AuditRetentionService{}
+	AllService.LogCleanupService = &LogCleanupService{}
 	// 迁移旧数据 role 字段
 	AllService.MigrateUserRoles()
 	return AllService

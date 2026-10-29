@@ -231,6 +231,12 @@ func InitGlobal() {
 	service.AllService.ServerStatusService = &service.ServerStatusService{}
 	service.AllService.AlertService.StartChecker()
 
+	// 日志保留天数：后台可配（system_settings 表）优先于 config.yaml。
+	// 日志写入器在 DB 就绪前已初始化，这里补一次应用，使后台改过的值重启后仍生效。
+	logger.SetMaxDays(service.EffectiveLogMaxDays())
+	global.Logger.Infof("日志保留天数：%d 天（按天轮转）；审计记录保留天数：%d 天",
+		service.EffectiveLogMaxDays(), service.EffectiveAuditRetentionDays())
+
 	global.LoginLimiter = utils.NewLoginLimiter(utils.SecurityPolicy{
 		CaptchaThreshold: global.Config.App.CaptchaThreshold,
 		BanThreshold:     global.Config.App.BanThreshold,
@@ -490,6 +496,7 @@ func DatabaseAutoUpdate() {
 		&model.AccountOpLog{},
 		&model.AddressBookOpLog{},
 		&model.PunchDirectOk{},
+		&model.SystemSetting{},
 	}
 	for _, m := range fallbackModels {
 		if err := db.AutoMigrate(m); err != nil {
