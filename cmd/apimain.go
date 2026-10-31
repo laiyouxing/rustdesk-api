@@ -504,10 +504,17 @@ func DatabaseAutoUpdate() {
 		}
 	}
 
-	// 修复历史数据：role 与 is_admin 不一致。原管理员降级时旧逻辑只改 role、
-	// 未同步 is_admin（Updates 跳过 nil），导致 is_admin 残留 true，
-	// IsAdmin() 仍判定为管理员（普通用户也能进后台看系统设置）。
-	// 以 role 为准双向同步；role 为空的老数据不动（IsAdmin 仍按 is_admin 兼容）。
+	// 修复历史数据：role 与 is_admin 不一致。
+	//
+	// ⚠️ 顺序至关重要：下面第三句会把 role='user' 的账户的 is_admin 清零。
+	// 而"初始 admin"正是首次初始化创建的，只设了 is_admin=1、role 落成 'user'。
+	// 如果直接清零，**每次启动都会把这个管理员降级一次**（无需任何操作）——
+	// 这正是 id=1 管理员身份莫名丢失的根因。
+	// 所以先把"仅靠 is_admin 表示管理员"的账户归一化成 role='admin'，
+	// 之后按 role 同步 is_admin 才自洽。
+	if err := db.Exec("UPDATE users SET role = 'admin' WHERE is_admin = 1 AND role <> 'admin'").Error; err != nil {
+		global.Logger.Errorf("normalize role for is_admin=1 err: %v", err)
+	}
 	if err := db.Exec("UPDATE users SET is_admin = 1 WHERE role = 'admin' AND (is_admin IS NULL OR is_admin = 0)").Error; err != nil {
 		global.Logger.Errorf("sync is_admin for role=admin err: %v", err)
 	}
