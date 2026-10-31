@@ -77,6 +77,8 @@ func New(c *config.Config, g *gorm.DB, l *log.Logger, j *jwt.Jwt, lo lock.Locker
 	AllService.LogCleanupService = &LogCleanupService{}
 	// 迁移旧数据 role 字段
 	AllService.MigrateUserRoles()
+	// 兜底自愈：管理员被误降级/误禁用后，重启即可恢复，不必手工改库
+	AllService.EnsureAtLeastOneAdmin()
 	return AllService
 }
 

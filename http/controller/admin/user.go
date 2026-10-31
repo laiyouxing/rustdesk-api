@@ -175,6 +175,46 @@ func (ct *User) List(c *gin.Context) {
 	response.Success(c, res)
 }
 
+// SetStatus 仅修改启用/禁用状态。
+//
+// 为什么不复用 Update：用户列表里的"启用/禁用"开关原先直接把整行数据回传给
+// Update，等于每次切换状态都会重写角色、昵称、分组等字段——管理员被静默
+// 降级就是这么发生的（列表里的 role 与实际管理员身份不一致时会互相覆盖）。
+// 状态变更应当只改状态。
+func (ct *User) SetStatus(c *gin.Context) {
+	f := &struct {
+		Id     uint             `json:"id"`
+		Status model.StatusCode `json:"status"`
+	}{}
+	if err := c.ShouldBindJSON(f); err != nil || f.Id == 0 {
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError"))
+		return
+	}
+	old := service.AllService.UserService.InfoById(f.Id)
+	if old.Id == 0 {
+		response.Fail(c, 101, response.TranslateMsg(c, "ItemNotFound"))
+		return
+	}
+	// 禁用管理员时同样要防锁死后台
+	if service.AllService.UserService.IsAdmin(old) && f.Status != model.COMMON_STATUS_ENABLE {
+		if old.Id == 1 {
+			response.Fail(c, 101, "不能禁用超级管理员(id=1)")
+			return
+		}
+		if service.AllService.UserService.CountEnabledAdmins() <= 1 {
+			response.Fail(c, 101, "这是系统中最后一个管理员，不能禁用，请先设置其他管理员")
+			return
+		}
+	}
+	if err := service.DB.Model(&model.User{}).Where("id = ?", f.Id).
+		Update("status", f.Status).Error; err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "OperationFailed")+err.Error())
+		return
+	}
+	recordOpLog(c, old, "update", "修改账户状态")
+	response.Success(c, nil)
+}
+
 // Update 编辑
 // @Tags 用户
 // @Summary 管理员编辑
@@ -202,9 +242,25 @@ func (ct *User) Update(c *gin.Context) {
 		return
 	}
 	u := f.ToUser()
-	// role 兜底：未传 role 时按 is_admin 推断
+	oldUser := service.AllService.UserService.InfoById(f.Id)
+	if oldUser.Id == 0 {
+		response.Fail(c, 101, response.TranslateMsg(c, "ItemNotFound"))
+		return
+	}
+	// role 归一化。
+	//
+	// 关键修复：旧实现是"role 为空就按 is_admin 推断，推断不出就当普通用户"，
+	// 于是任何**没有显式传 role** 的编辑（典型是用户列表里的"启用/禁用"开关，
+	// 它把整行数据回传）都会把管理员静默降级成普通用户——初始 admin 就是
+	// 这么丢掉管理员身份的。
+	//
+	// 现在的规则：未传 role 时**沿用数据库里的旧值**，只有旧值也为空才做推断。
+	// 即"编辑不改变角色"，除非请求明确要求改角色。
 	if u.Role == "" {
-		if u.IsAdmin != nil && *u.IsAdmin {
+		u.Role = oldUser.Role
+	}
+	if u.Role == "" {
+		if service.AllService.UserService.IsAdmin(oldUser) {
 			u.Role = "admin"
 		} else {
 			u.Role = "user"
@@ -221,9 +277,24 @@ func (ct *User) Update(c *gin.Context) {
 		isAdminFalse := false
 		u.IsAdmin = &isAdminFalse
 	}
+	// 保护管理员不至于被误操作锁死后台：
+	//   - 超级管理员(id=1) 不允许降级或禁用；
+	//   - 系统里最后一个管理员不允许降级或禁用（否则没人能再进后台）。
+	wasAdmin := service.AllService.UserService.IsAdmin(oldUser)
+	willBeAdmin := u.Role == "admin"
+	willBeEnabled := u.Status == model.COMMON_STATUS_ENABLE
+	if wasAdmin && (!willBeAdmin || !willBeEnabled) {
+		if oldUser.Id == 1 {
+			response.Fail(c, 101, "不能降级或禁用超级管理员(id=1)")
+			return
+		}
+		if service.AllService.UserService.CountEnabledAdmins() <= 1 {
+			response.Fail(c, 101, "这是系统中最后一个管理员，不能降级或禁用，请先设置其他管理员")
+			return
+		}
+	}
 	// 将普通用户提升为管理员：必须超级管理员账户二次确认（其用户名 + 密码 + MFA）
-	oldUser := service.AllService.UserService.InfoById(f.Id)
-	if u.Role == "admin" && (oldUser.Id == 0 || oldUser.Role != "admin") {
+	if willBeAdmin && !wasAdmin {
 		if ok, errMsg := verifyAdminReconfirm(f.VerifyUsername, f.VerifyPassword, f.MfaCode); !ok {
 			response.Fail(c, 101, response.TranslateMsg(c, errMsg))
 			return

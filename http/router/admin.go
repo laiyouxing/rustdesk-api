@@ -185,6 +185,8 @@ func UserBind(rg *gin.RouterGroup) {
 		aRP.GET("/detail/:id", cont.Detail)
 		aRP.POST("/create", cont.Create)
 		aRP.POST("/update", cont.Update)
+		// 仅改启用/禁用状态：列表开关专用，避免回写整行资料导致角色被覆盖
+		aRP.POST("/set_status", cont.SetStatus)
 		aRP.POST("/delete", cont.Delete)
 		aRP.POST("/changePwd", cont.UpdatePassword)
 		// 管理员强制重置用户 MFA（救援）

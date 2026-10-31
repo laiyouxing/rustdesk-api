@@ -345,6 +345,18 @@ func (us *UserService) IsAdmin(u *model.User) bool {
 	return false
 }
 
+// CountEnabledAdmins 统计"启用状态的管理员"数量。
+//
+// 用于防止把最后一个管理员降级/禁用导致后台彻底锁死。
+// 判定与 IsAdmin() 一致：role='admin' 或 is_admin=1 任一成立即算管理员。
+func (us *UserService) CountEnabledAdmins() int64 {
+	var n int64
+	DB.Model(&model.User{}).
+		Where("(role = ? OR is_admin = ?) AND status = ?", "admin", true, model.COMMON_STATUS_ENABLE).
+		Count(&n)
+	return n
+}
+
 // RootAdmin 返回超级管理员账户：最早创建的管理员（role=admin 且 id 最小）。
 // 新建/提升管理员时的二次确认须以该账户凭据授权，而非固定 username="admin"。
 func (us *UserService) RootAdmin() *model.User {
@@ -538,6 +550,48 @@ func (us *UserService) MigrateUserRoles() {
 	}
 	// 普通用户：role 为空但 is_admin=false 的也补上
 	DB.Model(&model.User{}).Where("role = '' AND (is_admin = ? OR is_admin IS NULL)", false).Update("role", "user")
+
+	// 修复历史不一致：is_admin=1 但 role 不是 admin 的账户。
+	//
+	// 这类数据来自"两个真值源"时期：初始 admin 建号时只设了 is_admin=1，
+	// role 落成 'user'；后续任意一次编辑（用户列表的启用/禁用开关会把整行
+	// 数据回传）会按 role 把 is_admin 同步成 0，于是管理员被静默降级。
+	// 这里把仍然 is_admin=1 的账户统一成 role='admin'，消除不一致来源。
+	res := DB.Model(&model.User{}).
+		Where("is_admin = ? AND role <> ?", true, "admin").
+		Update("role", "admin")
+	if res.Error == nil && res.RowsAffected > 0 {
+		Logger.Infof("修复 %d 个 is_admin=1 但 role 不一致的账户", res.RowsAffected)
+	}
+}
+
+// EnsureAtLeastOneAdmin 兜底自愈：如果系统里已经没有任何可用管理员，
+// 把最早创建的账户（通常是 id=1 的初始 admin）恢复为管理员。
+//
+// 触发场景：管理员被误降级/误禁用后，后台无人可进，只能改数据库才能恢复。
+// 有了这一步，重启 api-server 即可自愈，不必手工改库。
+// 只在不影响"本来就正常"的实例：有管理员时直接返回。
+func (us *UserService) EnsureAtLeastOneAdmin() {
+	if us.CountEnabledAdmins() > 0 {
+		return
+	}
+	u := &model.User{}
+	DB.Order("id asc").First(u)
+	if u.Id == 0 {
+		// 一个用户都没有，交给首次初始化流程
+		return
+	}
+	DB.Model(&model.User{}).Where("id = ?", u.Id).Updates(map[string]interface{}{
+		"role":     "admin",
+		"is_admin": true,
+		"status":   model.COMMON_STATUS_ENABLE,
+	})
+	Logger.Warnf(
+		"检测到系统中没有可用管理员，已自动将最早账户恢复为管理员: id=%d username=%s",
+		u.Id, u.Username,
+	)
+	// 该账户此前可能因降级被清过 token，这里一并提示需重新登录
+	Logger.Warnf("该账户的历史登录会话可能已被清除，请重新登录后台。")
 }
 
 // Helper functions, used for formatting username
