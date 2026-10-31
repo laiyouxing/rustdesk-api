@@ -39,9 +39,22 @@ func (ct *ServerStatus) Status(c *gin.Context) {
 	response.Success(c, gin.H{
 		"list":       results,
 		"hbbr_stats": stats,
-		// api-server 自身运行状态（进程/内存/GC/数据库/设备与用户数）
-		"api_stats": apiServerStats(),
 	})
+}
+
+// ApiStats 单独返回 api-server 自身运行状态。
+//
+// 与 Status 里内嵌的 api_stats 内容一致，但拆成独立接口是为了让前端
+// 能"按需点击获取"——这些指标不需要跟着列表自动刷新，独立接口也更轻
+// （不做服务器探测、不连 hbbr）。
+// @Tags 系统
+// @Summary api-server 自身状态
+// @Produce  json
+// @Success 200 {object} response.Response
+// @Router /server_status/api_stats [get]
+// @Security token
+func (ct *ServerStatus) ApiStats(c *gin.Context) {
+	response.Success(c, apiServerStats())
 }
 
 // apiServerStartTime 进程启动时刻，用于计算运行时长。

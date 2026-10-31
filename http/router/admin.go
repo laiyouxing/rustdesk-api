@@ -137,6 +137,8 @@ func ServerStatusBind(adg *gin.RouterGroup) {
 	rg := adg.Group("/server_status").Use(middleware.AdminPrivilege())
 	rg.GET("", cont.Status)
 	rg.GET("/list", cont.List)
+	// 独立的 api-server 自身状态：前端按需点击获取，不参与自动刷新
+	rg.GET("/api_stats", cont.ApiStats)
 	rg.POST("/create", cont.Create)
 	rg.POST("/update", cont.Update)
 	rg.POST("/delete", cont.Delete)
