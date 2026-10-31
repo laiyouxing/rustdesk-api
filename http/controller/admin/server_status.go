@@ -1,8 +1,10 @@
 package admin
 
 import (
+	"context"
 	"net"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -37,7 +39,74 @@ func (ct *ServerStatus) Status(c *gin.Context) {
 	response.Success(c, gin.H{
 		"list":       results,
 		"hbbr_stats": stats,
+		// api-server 自身运行状态（进程/内存/GC/数据库/设备与用户数）
+		"api_stats": apiServerStats(),
 	})
+}
+
+// apiServerStartTime 进程启动时刻，用于计算运行时长。
+var apiServerStartTime = time.Now()
+
+// apiServerStats 汇总 api-server 自身的运行状态。
+//
+// 全部取自标准库与已打开的数据库连接，不额外发起网络请求：
+//   - runtime.MemStats：内存与 GC
+//   - sql.DB.Stats()：连接池
+//   - PingContext：数据库是否真的可用（带 2s 超时，避免把接口拖死）
+//   - Peer/User 计数：业务规模
+func apiServerStats() gin.H {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	st := gin.H{
+		"available":       true,
+		"version":         service.AllService.AppService.GetAppVersion(),
+		"go_version":      runtime.Version(),
+		"os":              runtime.GOOS + "/" + runtime.GOARCH,
+		"num_cpu":         runtime.NumCPU(),
+		"goroutines":      runtime.NumGoroutine(),
+		"memory_alloc_mb": float64(m.Alloc) / 1024 / 1024,
+		"memory_sys_mb":   float64(m.Sys) / 1024 / 1024,
+		"heap_inuse_mb":   float64(m.HeapInuse) / 1024 / 1024,
+		"gc_count":        m.NumGC,
+		"gc_pause_ms":     float64(m.PauseTotalNs) / 1e6,
+		"start_time":      apiServerStartTime.Unix(),
+		"uptime_seconds":  int64(time.Since(apiServerStartTime).Seconds()),
+		"api_addr":        global.Config.Gin.ApiAddr,
+	}
+
+	// —— 数据库 ——
+	if sqlDB, err := service.DB.DB(); err != nil {
+		st["db_available"] = false
+		st["db_error"] = err.Error()
+	} else {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		pingErr := sqlDB.PingContext(ctx)
+		cancel()
+		s := sqlDB.Stats()
+		st["db_available"] = pingErr == nil
+		st["db_open_conns"] = s.OpenConnections
+		st["db_in_use"] = s.InUse
+		st["db_idle"] = s.Idle
+		st["db_wait_count"] = s.WaitCount
+		if pingErr != nil {
+			st["db_error"] = pingErr.Error()
+		}
+	}
+
+	// —— 业务规模 ——
+	var peerTotal, userTotal int64
+	service.DB.Model(&model.Peer{}).Count(&peerTotal)
+	service.DB.Model(&model.User{}).Count(&userTotal)
+	// 在线口径与设备管理页的"在线"快捷筛选保持一致：5 分钟内有上报
+	onlineSince := time.Now().Unix() - 300
+	var onlinePeers int64
+	service.DB.Model(&model.Peer{}).Where("last_online_time > ?", onlineSince).Count(&onlinePeers)
+	st["peer_total"] = peerTotal
+	st["peer_online"] = onlinePeers
+	st["user_total"] = userTotal
+
+	return st
 }
 
 // List 列出所有管理员共享的服务器探测条目
