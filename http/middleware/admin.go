@@ -17,7 +17,11 @@ func BackendUserAuth() gin.HandlerFunc {
 		// 从 HttpOnly Cookie 读取会话令牌（前端 JS 无法读取，XSS 不可窃）
 		token, err := c.Cookie("access_token")
 		if err != nil || token == "" {
-			response.Fail(c, 403, response.TranslateMsg(c, "NeedLogin"))
+			// 用 401 表示"会话无效/未登录"，与 AdminPrivilege 的 403(无权限) 区分开。
+			// 前端只对 401 做登出+跳转；若两者都用 403，任何"权限不足"都会被前端
+			// 误判成掉线并强制退出——带 MFA 的账户会陷入"登录成功→立刻退出→
+			// 再次要求输入动态码"的循环。
+			response.Fail(c, 401, response.TranslateMsg(c, "NeedLogin"))
 			c.Abort()
 			return
 		}
@@ -35,15 +39,16 @@ func BackendUserAuth() gin.HandlerFunc {
 			}
 			c.SetSameSite(http.SameSiteLaxMode)
 			c.SetCookie("access_token", "", -1, "/", "", secure, true)
-			response.Fail(c, 403, response.TranslateMsg(c, "NeedLogin"))
+			// 同样用 401：token 失效属于"会话无效"，前端应登出重登，
+			// 而不是当成"无权限"。
+			response.Fail(c, 401, response.TranslateMsg(c, "NeedLogin"))
 			c.Abort()
 			return
 		}
 
+		// 账户被禁用或已过期：会话同样无效，必须让前端登出，否则会一直 401 抖动。
 		if !service.AllService.UserService.CheckUserEnable(user) || service.AllService.UserService.IsUserExpired(user) {
-			c.JSON(401, gin.H{
-				"error": "Unauthorized",
-			})
+			response.Fail(c, 401, response.TranslateMsg(c, "NeedLogin"))
 			c.Abort()
 			return
 		}
