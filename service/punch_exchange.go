@@ -277,7 +277,7 @@ func (s *PunchExchangeService) PopDisconnects(peerId string) []int {
 }
 
 // Upsert 上报。peerId 为上报者；target 非空表示"我想连 target"。
-func (s *PunchExchangeService) Upsert(peerId, target string, meta PunchMeta, addrs []PunchAddr) {
+func (s *PunchExchangeService) Upsert(peerId, target string, meta PunchMeta, addrs []PunchAddr, caps []string) {
 	if peerId == "" || len(addrs) == 0 {
 		return
 	}
@@ -296,7 +296,15 @@ func (s *PunchExchangeService) Upsert(peerId, target string, meta PunchMeta, add
 			s.inbox[target] = make(map[string]*PunchEntry)
 		}
 		s.inbox[target][peerId] = entry
-		// 记录一次"打算直连"的意图，供宽限期后校验直连上报是否到位。
+		// 只对**声明了 direct-ok 能力**的客户端登记直连意图。
+		//
+		// 这是安全开关，不是优化：旧版客户端根本没有"直连后上报"的能力，
+		// 若对它们也登记意图，宽限期后必然判定"未上报直连"，把正常中继会话
+		// 强制断开——表现为旧客户端连上就掉、无限重连。
+		// 所以：能识别的新客户端才执法，识别不了的一律放行。
+		if !hasCap(caps, PunchCapDirectOk) {
+			return
+		}
 		// 已存在同 pair 的意图时只刷新时间，不重置——否则控制端重连时
 		// 会不断把宽限期往后推，永远等不到执法。
 		k := pairKey(peerId, target)
@@ -304,6 +312,19 @@ func (s *PunchExchangeService) Upsert(peerId, target string, meta PunchMeta, add
 			s.pending[k] = directPending{Target: target, CreatedAt: time.Now().Unix()}
 		}
 	}
+}
+
+// PunchCapDirectOk 客户端能力：支持直连成功后上报（direct-ok）
+const PunchCapDirectOk = "direct-ok"
+
+// hasCap 判断能力列表是否包含某项
+func hasCap(caps []string, want string) bool {
+	for _, c := range caps {
+		if c == want {
+			return true
+		}
+	}
+	return false
 }
 
 // GetByPeer 拉取某设备自己上报的地址与网络环境（控制端用：peer_id = 被控端 id）

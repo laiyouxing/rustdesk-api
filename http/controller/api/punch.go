@@ -58,7 +58,7 @@ func (p *Punch) Report(c *gin.Context) {
 		NatType:  f.Meta.NatType,
 		Upnp:     f.Meta.Upnp,
 		ViaProxy: f.Meta.ViaProxy,
-	}, addrs)
+	}, addrs, f.Caps)
 	response.Success(c, gin.H{"ok": true})
 }
 

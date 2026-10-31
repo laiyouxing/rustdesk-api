@@ -35,6 +35,9 @@ type PunchAddrForm struct {
 	Target string          `json:"target"`
 	Meta   PunchMeta       `json:"meta"`
 	Addrs  []PunchAddrItem `json:"addrs"`
+	// Caps 客户端能力标识，如 ["direct-ok"] 表示"直连成功后会上报"。
+	// 老客户端不传该字段——服务端必须对它们放行，不能做直连合规执法。
+	Caps []string `json:"caps"`
 }
 
 // PunchAddrQuery 拉取地址的查询参数
