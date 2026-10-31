@@ -35,20 +35,23 @@ func (a *Audit) ConnList(c *gin.Context) {
 		return
 	}
 	res := service.AllService.AuditService.AuditConnList(query.Page, query.PageSize, func(tx *gorm.DB) {
-		if query.PeerId != "" {
-			tx.Where("peer_id like ?", "%"+query.PeerId+"%")
+		admin.ApplyAuditCommon(tx, query)
+		// action：留空时默认只看 new（保持原有行为）；
+		// 显式传值则可查 close 等其他动作。
+		if query.Action != "" {
+			tx.Where("action = ?", query.Action)
+		} else {
+			tx.Where("action = 'new'")
 		}
-		if query.FromPeer != "" {
-			tx.Where("from_peer like ?", "%"+query.FromPeer+"%")
-		}
-		tx.Where("action = 'new'")
-		tx.Order("id desc")
+		admin.ApplyAuditOrder(tx, query)
 	})
 	// Enrich with peer hostname/alias
 	type ConnEntry struct {
 		model.AuditConn
 		PeerHostname  string `json:"peer_hostname"`
 		PeerAlias     string `json:"peer_alias"`
+		FromHostname  string `json:"from_hostname"`
+		FromAlias     string `json:"from_alias"`
 		CloseTimeStr  string `json:"close_time_str"`
 	}
 	var enriched []*ConnEntry
@@ -56,6 +59,9 @@ func (a *Audit) ConnList(c *gin.Context) {
 	for _, conn := range res.AuditConns {
 		if conn.PeerId != "" {
 			peerIds = append(peerIds, conn.PeerId)
+		}
+		if conn.FromPeer != "" {
+			peerIds = append(peerIds, conn.FromPeer)
 		}
 	}
 	hostMap := make(map[string]struct{ Hostname, Alias string })
@@ -73,15 +79,18 @@ func (a *Audit) ConnList(c *gin.Context) {
 	}
 	for _, conn := range res.AuditConns {
 		h := hostMap[conn.PeerId]
+		fh := hostMap[conn.FromPeer]
 		closeTimeStr := ""
 		if conn.CloseTime > 0 {
 			closeTimeStr = time.Unix(conn.CloseTime, 0).Format("2006-01-02 15:04:05")
 		}
 		enriched = append(enriched, &ConnEntry{
-			AuditConn:     *conn,
-			PeerHostname:  h.Hostname,
-			PeerAlias:     h.Alias,
-			CloseTimeStr:  closeTimeStr,
+			AuditConn:    *conn,
+			PeerHostname: h.Hostname,
+			PeerAlias:    h.Alias,
+			FromHostname: fh.Hostname,
+			FromAlias:    fh.Alias,
+			CloseTimeStr: closeTimeStr,
 		})
 	}
 	if enriched == nil {
@@ -176,13 +185,15 @@ func (a *Audit) FileList(c *gin.Context) {
 		return
 	}
 	res := service.AllService.AuditService.AuditFileList(query.Page, query.PageSize, func(tx *gorm.DB) {
-		if query.PeerId != "" {
-			tx.Where("peer_id like ?", "%"+query.PeerId+"%")
+		admin.ApplyAuditCommon(tx, query)
+		// 文件日志专有筛选
+		if query.Path != "" {
+			tx.Where("path like ?", "%"+query.Path+"%")
 		}
-		if query.FromPeer != "" {
-			tx.Where("from_peer like ?", "%"+query.FromPeer+"%")
+		if query.IsFile != nil {
+			tx.Where("is_file = ?", *query.IsFile)
 		}
-		tx.Order("id desc")
+		admin.ApplyAuditOrder(tx, query)
 	})
 	response.Success(c, res)
 }
