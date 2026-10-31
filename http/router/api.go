@@ -141,6 +141,11 @@ func ApiInit(g *gin.Engine) {
 		// /api/device-group/accessible?current=1&pageSize=100
 		frg.GET("/device-group/accessible", gr.Device)
 	}
+	{
+		// 新装设备登录后领取远程 ID（ID 绑定设备，换账号不变）
+		dv := &api.Device{}
+		frg.POST("/device/claim-id", dv.ClaimId)
+	}
 
 	{
 		ab := &api.Ab{}
