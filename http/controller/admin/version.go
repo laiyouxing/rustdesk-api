@@ -45,10 +45,9 @@ func (v *Version) Create(c *gin.Context) {
 	if ver.Platform == "" {
 		ver.Platform = "windows"
 	}
-	if ver.Url == "" {
-		response.Fail(c, 101, "下载链接不能为空")
-		return
-	}
+	// 下载链接允许留空：客户端在 url 为空时会自动回落到 GitHub Releases 里
+	// 「同一版本 + 对应平台」的产物（见 client-custom 的 github_release_url）。
+	// 这样发布新版本时只需填版本号，不必再手工拼下载地址。
 	// 未传状态时默认启用；已传则尊重前端的设置
 	if ver.Status == 0 {
 		ver.Status = int(model.COMMON_STATUS_ENABLE)
