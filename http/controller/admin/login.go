@@ -15,6 +15,7 @@ import (
 	adResp "github.com/lejianwen/rustdesk-api/v2/http/response/admin"
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"github.com/lejianwen/rustdesk-api/v2/service"
+	"github.com/lejianwen/rustdesk-api/v2/utils"
 )
 
 type Login struct {
@@ -349,9 +350,29 @@ func clearAuthCookie(c *gin.Context) {
 func responseLoginSuccess(c *gin.Context, u *model.User, ut *model.UserToken) {
 	// token 仅通过 HttpOnly Cookie 下发，不再返回给前端 JS，从根本上消除 XSS 盗取风险。
 	setAuthCookie(c, ut.Token, int(ut.ExpiredAt-time.Now().Unix()))
+	// 与 middleware 的 [AUTH] reject 日志配套：记录本次签发的 token 标签、
+	// 指纹标签与路径，便于把"签发"和"随后被拒"对应起来。
+	ua := c.GetHeader("User-Agent")
+	global.Logger.Infof(
+		"[AUTH] issue path=%s uid=%d token=%s fp=%s ua_len=%d exp=%d secure=%t",
+		c.FullPath(), u.Id,
+		shortTag(ut.Token), shortTag(utils.Md5(ua)), len(ua), ut.ExpiredAt,
+		c.Request.TLS != nil,
+	)
 	lp := &adResp.LoginPayload{}
 	lp.FromUser(u)
 	lp.Token = "" // 不再向前端暴露 token
 	lp.RouteNames = service.AllService.UserService.RouteNames(u)
 	response.Success(c, lp)
+}
+
+// shortTag 取前缀用于日志关联，不泄露完整凭据。
+func shortTag(v string) string {
+	if v == "" {
+		return "-"
+	}
+	if len(v) <= 8 {
+		return v
+	}
+	return v[:8]
 }
