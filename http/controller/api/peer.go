@@ -6,7 +6,6 @@ import (
 	"github.com/gin-gonic/gin/binding"
 	requstform "github.com/lejianwen/rustdesk-api/v2/http/request/api"
 	"github.com/lejianwen/rustdesk-api/v2/http/response"
-	"github.com/lejianwen/rustdesk-api/v2/model"
 	"github.com/lejianwen/rustdesk-api/v2/service"
 	"net/http"
 )
@@ -32,28 +31,6 @@ func (p *Peer) SysInfo(c *gin.Context) {
 		return
 	}
 	fpe := f.ToPeer()
-	// 新装设备在拿到 ID 之前会以空 id 上报。此时**不能**按 id 建档——否则
-	// Peer 表会堆积 id='' 的垃圾行，且 FindById("") 会命中它们。
-	// 空 id 时只按 uuid 更新已有记录的元信息；ID 由登录后的
-	// /api/device/claim-id 分配。
-	if f.Id == "" {
-		if fpe.Uuid != "" {
-			if exist := service.AllService.PeerService.FindByUuid(fpe.Uuid); exist.RowId != 0 {
-				upd := map[string]interface{}{}
-				if fpe.Hostname != "" && fpe.Hostname != exist.Hostname {
-					upd["hostname"] = fpe.Hostname
-				}
-				if fpe.Version != "" && fpe.Version != exist.Version {
-					upd["version"] = fpe.Version
-				}
-				if len(upd) > 0 {
-					service.DB.Model(&model.Peer{}).Where("row_id = ?", exist.RowId).Updates(upd)
-				}
-			}
-		}
-		c.String(http.StatusOK, "SYSINFO_UPDATED")
-		return
-	}
 	pe := service.AllService.PeerService.FindById(f.Id)
 	if pe.RowId == 0 {
 		pe = f.ToPeer()

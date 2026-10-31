@@ -1,10 +1,6 @@
 package service
 
 import (
-	"errors"
-	"math/rand"
-	"strconv"
-
 	"github.com/lejianwen/rustdesk-api/v2/model"
 	"gorm.io/gorm"
 )
@@ -154,76 +150,4 @@ func (ps *PeerService) BatchDelete(ids []uint) error {
 // Update 更新
 func (ps *PeerService) Update(u *model.Peer) error {
 	return DB.Model(u).Updates(u).Error
-}
-
-// ClaimId 为新设备分配或取回远程 ID。
-//
-// 规则（已与用户确认）：
-//   - ID 绑定"这台机器"(uuid)，换账号登录也不变；
-//   - 已经分配过 ID 的机器直接返回原值，**不重新分配**（幂等）；
-//   - 老机器本地已有 ID，走 sysinfo 上报，不会走到这里；
-//   - 只有新装设备（本地没有 ID）在登录后才会触发分配。
-//
-// 返回的 ID 为 9 位数字，保证在 Peer 表中不重复。
-func (ps *PeerService) ClaimId(uuid string, userId uint, hostname string) (string, error) {
-	if uuid == "" {
-		return "", errors.New("uuid 不能为空")
-	}
-	if p := ps.FindByUuid(uuid); p.RowId != 0 {
-		// 已存在这台机器的记录
-		if p.Id != "" {
-			// 已有 ID：幂等返回，顺手补齐归属与主机名
-			upd := map[string]interface{}{}
-			if p.UserId == 0 && userId != 0 {
-				upd["user_id"] = userId
-			}
-			if hostname != "" && hostname != p.Hostname {
-				upd["hostname"] = hostname
-			}
-			if len(upd) > 0 {
-				if err := DB.Model(&model.Peer{}).Where("row_id = ?", p.RowId).Updates(upd).Error; err != nil {
-					return "", err
-				}
-			}
-			return p.Id, nil
-		}
-		// 有设备记录但还没有 ID（未登录时上报过）：现在分配
-		id, err := ps.allocId()
-		if err != nil {
-			return "", err
-		}
-		upd := map[string]interface{}{"id": id}
-		if userId != 0 {
-			upd["user_id"] = userId
-		}
-		if hostname != "" {
-			upd["hostname"] = hostname
-		}
-		if err := DB.Model(&model.Peer{}).Where("row_id = ?", p.RowId).Updates(upd).Error; err != nil {
-			return "", err
-		}
-		return id, nil
-	}
-	// 全新设备
-	id, err := ps.allocId()
-	if err != nil {
-		return "", err
-	}
-	if err := ps.Create(&model.Peer{Id: id, Uuid: uuid, UserId: userId, Hostname: hostname}); err != nil {
-		return "", err
-	}
-	return id, nil
-}
-
-// allocId 生成一个未被占用的 9 位数字 ID（100000000 ~ 999999999）。
-// 撞号则重试；连续失败返回错误，避免死循环。
-func (ps *PeerService) allocId() (string, error) {
-	const maxRetry = 32
-	for i := 0; i < maxRetry; i++ {
-		id := strconv.Itoa(100000000 + rand.Intn(900000000))
-		if ps.FindById(id).RowId == 0 {
-			return id, nil
-		}
-	}
-	return "", errors.New("分配远程 ID 失败：连续撞号")
 }
