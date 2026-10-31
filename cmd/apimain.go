@@ -60,6 +60,8 @@ var rootCmd = &cobra.Command{
 		go service.AllService.LogCleanupService.StartLogCleanupSweep()
 		// 审计记录保留策略：默认保留 90 天（audit.retention-days 可配）
 		go service.AllService.AuditRetentionService.StartAuditRetentionSweep()
+		// 存储管理：站内消息 / 登录日志 / 操作日志按各自配置天数清理（0=不清理）
+		go service.AllService.StorageRetentionService.StartSweep()
 	},
 }
 

@@ -366,6 +366,7 @@ func ConfigBind(rg *gin.RouterGroup) {
 	rp := &admin.Retention{}
 	aRr := rg.Group("/retention").Use(middleware.BackendUserAuth(), middleware.AdminPrivilege())
 	aRr.GET("/info", rp.Info)
+	aRr.GET("/stats", rp.Stats)
 	aRr.POST("/update", rp.Update)
 
 	// 重启服务：仅管理员

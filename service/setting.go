@@ -12,6 +12,12 @@ const (
 	SettingKeyLogMaxDays = "log.max_days"
 	// SettingKeyAuditRetentionDays 审计记录保留天数
 	SettingKeyAuditRetentionDays = "audit.retention_days"
+	// SettingKeyStationMessageRetentionDays 站内消息保留天数（0=不自动清理）
+	SettingKeyStationMessageRetentionDays = "station_message.retention_days"
+	// SettingKeyLoginLogRetentionDays 登录日志保留天数（0=不自动清理）
+	SettingKeyLoginLogRetentionDays = "login_log.retention_days"
+	// SettingKeyOpLogRetentionDays 操作日志保留天数（账户操作 + 地址簿操作，0=不自动清理）
+	SettingKeyOpLogRetentionDays = "op_log.retention_days"
 )
 
 // SettingService 系统参数读写。
@@ -82,4 +88,37 @@ func EffectiveAuditRetentionDays() int {
 		return Config.Audit.EffectiveRetentionDays()
 	}
 	return 90
+}
+
+// EffectiveRetentionDays 读取"可为 0"的保留天数设置。
+//
+// 与上面两个不同，这里 0 是**有效值**，表示"不自动清理"。
+// 返回 (天数, 是否已配置)。未配置时返回 (默认值, false)。
+func EffectiveRetentionDays(key string, def int) (int, bool) {
+	if DB == nil || AllService == nil || AllService.SettingService == nil {
+		return def, false
+	}
+	n, ok := AllService.SettingService.GetInt(key)
+	if !ok || n < 0 {
+		return def, false
+	}
+	return n, true
+}
+
+// EffectiveStationMessageRetentionDays 站内消息保留天数（默认 0 = 不自动清理）。
+func EffectiveStationMessageRetentionDays() int {
+	n, _ := EffectiveRetentionDays(SettingKeyStationMessageRetentionDays, 0)
+	return n
+}
+
+// EffectiveLoginLogRetentionDays 登录日志保留天数（默认 0 = 不自动清理）。
+func EffectiveLoginLogRetentionDays() int {
+	n, _ := EffectiveRetentionDays(SettingKeyLoginLogRetentionDays, 0)
+	return n
+}
+
+// EffectiveOpLogRetentionDays 操作日志保留天数（默认 0 = 不自动清理）。
+func EffectiveOpLogRetentionDays() int {
+	n, _ := EffectiveRetentionDays(SettingKeyOpLogRetentionDays, 0)
+	return n
 }
