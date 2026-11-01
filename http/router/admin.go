@@ -377,6 +377,8 @@ func ConfigBind(rg *gin.RouterGroup) {
 	aNd.GET("/score-config", nd.ScoreConfig)
 	aNd.POST("/score-config", nd.SaveScoreConfig)
 	aNd.POST("/refresh", nd.Refresh)
+	aNd.GET("/static-relays", nd.StaticRelays)
+	aNd.POST("/static-relays", nd.SaveStaticRelays)
 	aRr.POST("/update", rp.Update)
 
 	// 重启服务：仅管理员

@@ -1,4 +1,4 @@
-package admin
+﻿package admin
 
 import (
 	"github.com/gin-gonic/gin"
@@ -162,4 +162,41 @@ func (n *Node) Refresh(c *gin.Context) {
 		service.AllService.NodeService.Probe(&nodes[i])
 	}
 	response.Success(c, gin.H{"ok": true, "count": len(nodes)})
+}
+
+// StaticRelays 读取静态中继兜底列表
+// @Tags 集群节点
+// @Summary 静态中继兜底列表
+// @Router /admin/node/static-relays [get]
+// @Security token
+func (n *Node) StaticRelays(c *gin.Context) {
+	response.Success(c, gin.H{"list": service.AllService.NodeService.StaticRelays()})
+}
+
+// SaveStaticRelays 保存静态中继兜底列表
+// @Tags 集群节点
+// @Summary 保存静态中继兜底列表
+// @Router /admin/node/static-relays [post]
+// @Security token
+func (n *Node) SaveStaticRelays(c *gin.Context) {
+	type Req struct {
+		List []string `json:"list"`
+	}
+	var req Req
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
+		return
+	}
+	for _, a := range req.List {
+		if a == "" {
+			response.Fail(c, 101, "地址不能为空")
+			return
+		}
+	}
+	if err := service.AllService.NodeService.SaveStaticRelays(req.List); err != nil {
+		response.Fail(c, 101, "保存失败："+err.Error())
+		return
+	}
+	global.Logger.Infof("[Node] 静态中继已更新: %v", req.List)
+	response.Success(c, gin.H{"ok": true})
 }

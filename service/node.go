@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/lejianwen/rustdesk-api/v2/global"
@@ -17,6 +18,13 @@ const (
 	SettingKeyNodeScoreWeights = "node.score_weights"
 	// SettingKeyNodeOfflineSec 心跳超时秒数，超过即判定离线
 	SettingKeyNodeOfflineSec = "node.offline_sec"
+	// SettingKeyNodeStaticRelays 静态中继（逗号分隔）。
+	//
+	// 背景：调度列表只包含"已注册且在线"的节点。集群扩容过渡期内、或存在
+	// 未接入 agent 的中继时，若直接用调度结果**替换**静态 -r，会把中继数量
+	// 缩减（例如 3 台变 1 台），反而降低可用性。这里改为**合并**：调度结果
+	// 在前（按分数排序），静态中继补在后面兜底。
+	SettingKeyNodeStaticRelays = "node.static_relays"
 )
 
 // NodeScoreWeights 多因子调度的权重。
@@ -285,7 +293,7 @@ func (s *NodeService) Relays(region string, limit int) []map[string]interface{} 
 		}
 		return list[i].score < list[j].score
 	})
-	out := make([]map[string]interface{}, 0, len(list))
+	out := make([]map[string]interface{}, 0, len(list)+8)
 	for i, it := range list {
 		if limit > 0 && i >= limit {
 			break
@@ -302,10 +310,57 @@ func (s *NodeService) Relays(region string, limit int) []map[string]interface{} 
 		}
 		out = append(out, item)
 	}
+	// 追加静态中继兜底（去重）：保证未接入 agent 的中继不会被调度结果挤掉。
+	// 调度只覆盖"已注册且在线"的节点，过渡期内中继数量可能少于静态配置。
+	for _, addr := range s.StaticRelays() {
+		dup := false
+		for _, it := range list {
+			if it.node.Addr == addr {
+				dup = true
+				break
+			}
+		}
+		for _, x := range out {
+			if x["addr"] == addr {
+				dup = true
+				break
+			}
+		}
+		if dup {
+			continue
+		}
+		out = append(out, map[string]interface{}{
+			"addr":   addr,
+			"score":  9999.0,
+			"region": "",
+			"static": true,
+		})
+	}
 	return out
 }
 
 // TouchRtt 健康检查时回填 api-server 到该节点的 TCP 建连耗时。
+
+// StaticRelays 读取静态中继兜底列表（逗号分隔）。
+func (s *NodeService) StaticRelays() []string {
+	v, ok := AllService.SettingService.Get(SettingKeyNodeStaticRelays)
+	if !ok || v == "" {
+		return nil
+	}
+	out := make([]string, 0, 4)
+	for _, a := range strings.Split(v, ",") {
+		a = strings.TrimSpace(a)
+		if a != "" {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+// SaveStaticRelays 保存静态中继兜底列表。
+func (s *NodeService) SaveStaticRelays(list []string) error {
+	return AllService.SettingService.Set(SettingKeyNodeStaticRelays, strings.Join(list, ","))
+}
 func (s *NodeService) TouchRtt(id uint, rttMs int) {
 	DB.Model(&model.ServerNode{}).Where("id = ?", id).Update("rtt_ms", rttMs)
 }
