@@ -317,18 +317,31 @@ func (n *Node) SaveStaticRelays(c *gin.Context) {
 	response.Success(c, gin.H{"ok": true})
 }
 
-// GetSecret 读取节点专用密钥（未配置返回空串）
+// GetSecret 读取节点专用密钥与轮换状态
 // @Tags 集群节点
 // @Summary 读取节点接入密钥
 // @Router /admin/node/secret [get]
 // @Security token
 func (n *Node) GetSecret(c *gin.Context) {
-	response.Success(c, gin.H{"secret": service.AllService.NodeService.NodeSecret()})
+	secret := service.AllService.NodeService.NodeSecret()
+	rotatedAt := service.AllService.NodeService.NodeSecretRotatedAt()
+	inGrace := service.AllService.NodeService.NodeSecretPrevInGrace()
+	expiresAt := int64(0)
+	if inGrace {
+		expiresAt = service.AllService.NodeService.NodeSecretGraceDeadline()
+	}
+	response.Success(c, gin.H{
+		"secret":          secret,
+		"rotated_at":      rotatedAt,
+		"has_prev":        inGrace,
+		"prev_expires_at": expiresAt,
+		"grace_seconds":   service.NodeSecretGraceSeconds,
+	})
 }
 
-// SaveSecret 设置节点专用密钥（传空串则由服务端生成随机密钥并保存）
+// SaveSecret 轮换节点专用密钥（传空串则由服务端生成随机密钥并保存）
 // @Tags 集群节点
-// @Summary 设置节点接入密钥
+// @Summary 轮换节点接入密钥
 // @Router /admin/node/secret [post]
 // @Security token
 func (n *Node) SaveSecret(c *gin.Context) {
@@ -353,13 +366,15 @@ func (n *Node) SaveSecret(c *gin.Context) {
 		response.Fail(c, 101, "节点密钥长度至少 16 位")
 		return
 	}
-	if err := service.AllService.NodeService.SaveNodeSecret(secret); err != nil {
+	rotatedAt, err := service.AllService.NodeService.RotateNodeSecret(secret)
+	if err != nil {
 		response.Fail(c, 101, "保存失败："+err.Error())
 		return
 	}
 	// 不要记录密钥内容本身
-	global.Logger.Infof("[Node] 节点接入密钥已更新（长度 %d）", len(secret))
-	response.Success(c, gin.H{"secret": secret})
+	global.Logger.Infof("[Node] 节点接入密钥已轮换（长度 %d，宽限期 %d 天），旧密钥保留至 %d",
+		len(secret), service.NodeSecretGraceSeconds/86400, rotatedAt+service.NodeSecretGraceSeconds)
+	response.Success(c, gin.H{"secret": secret, "rotated_at": rotatedAt})
 }
 
 // GetConfig 读取节点当前下发的配置

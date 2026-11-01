@@ -1,6 +1,7 @@
 package service
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -33,7 +34,21 @@ const (
 	// 等于公开信息；仅靠它无法阻止任何人伪造节点。节点写接口额外校验这个
 	// 专用密钥；未配置时告警并放行（兼容升级）。
 	SettingKeyNodeSecret = "node.secret"
+	// SettingKeyNodeSecretPrev 上一把节点密钥（轮换后的宽限期用）。
+	//
+	// 轮换瞬间已在线的节点仍然只有旧密钥，若立刻只认新密钥会让它们全部 401
+	// 掉线；旧密钥保留一段宽限期（NodeSecretGraceSeconds），期间新老都接受，
+	// 节点会通过 GET /api/node/secret 自动换到新密钥。
+	SettingKeyNodeSecretPrev = "node.secret_prev"
+	// SettingKeyNodeSecretRotatedAt 最近一次轮换时间（unix 秒），用于计算宽限期。
+	SettingKeyNodeSecretRotatedAt = "node.secret_rotated_at"
 )
+
+// NodeSecretGraceSeconds 旧密钥宽限期：7 天。
+//
+// 节点每 60 秒轮询一次 GET /api/node/secret，7 天足够覆盖升级/重启窗口；
+// 到期后旧密钥自动失效，无需额外的清理任务。
+const NodeSecretGraceSeconds int64 = 7 * 24 * 3600
 
 // maxNodeConfigBytes 节点配置 JSON 的大小上限（64KB）。
 const maxNodeConfigBytes = 64 << 10
@@ -500,9 +515,90 @@ func (s *NodeService) NodeSecret() string {
 	return strings.TrimSpace(v)
 }
 
-// SaveNodeSecret 保存节点专用密钥（传空串表示清除，即回到"未配置"状态）。
-func (s *NodeService) SaveNodeSecret(secret string) error {
-	return AllService.SettingService.Set(SettingKeyNodeSecret, strings.TrimSpace(secret))
+// NodeSecretPrev 读取上一把节点密钥（从未轮换过返回空串）。
+func (s *NodeService) NodeSecretPrev() string {
+	v, _ := AllService.SettingService.Get(SettingKeyNodeSecretPrev)
+	return strings.TrimSpace(v)
+}
+
+// NodeSecretRotatedAt 最近一次密钥轮换时间（unix 秒，0 表示从未轮换/未知）。
+func (s *NodeService) NodeSecretRotatedAt() int64 {
+	n, ok := AllService.SettingService.GetInt(SettingKeyNodeSecretRotatedAt)
+	if !ok || n <= 0 {
+		return 0
+	}
+	return int64(n)
+}
+
+// NodeSecretGraceDeadline 旧密钥的宽限期截止时间（unix 秒）。
+// 只有真的存在上一把密钥且轮换时间有效时才返回非 0。
+func (s *NodeService) NodeSecretGraceDeadline() int64 {
+	if s.NodeSecretPrev() == "" {
+		return 0
+	}
+	rotatedAt := s.NodeSecretRotatedAt()
+	if rotatedAt <= 0 {
+		return 0
+	}
+	return rotatedAt + NodeSecretGraceSeconds
+}
+
+// NodeSecretPrevInGrace 上一把密钥当前是否仍在宽限期内。
+func (s *NodeService) NodeSecretPrevInGrace() bool {
+	deadline := s.NodeSecretGraceDeadline()
+	return deadline > 0 && time.Now().Unix() <= deadline
+}
+
+// NodeSecretValid 校验请求携带的密钥。
+//
+// 接受：当前密钥；或轮换后宽限期内的上一把密钥（避免轮换瞬间节点全掉线）。
+// 返回 (是否通过, 是否用的是上一把)。比较使用常量时间实现。
+func (s *NodeService) NodeSecretValid(provided string) (bool, bool) {
+	provided = strings.TrimSpace(provided)
+	if provided == "" {
+		return false, false
+	}
+	current := s.NodeSecret()
+	if current != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(current)) == 1 {
+		return true, false
+	}
+	if s.NodeSecretPrevInGrace() {
+		prev := s.NodeSecretPrev()
+		if prev != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(prev)) == 1 {
+			return true, true
+		}
+	}
+	return false, false
+}
+
+// RotateNodeSecret 轮换节点专用密钥。
+//
+// 顺序：先保存上一把（宽限期用），再写新值，最后记录轮换时间。
+// 这样即使进程在中间崩溃，也不会出现"新值已生效但旧值没保留"的掉线窗口。
+func (s *NodeService) RotateNodeSecret(secret string) (int64, error) {
+	secret = strings.TrimSpace(secret)
+	if secret == "" {
+		return 0, fmt.Errorf("密钥不能为空")
+	}
+	prev := s.NodeSecret()
+	if prev != "" && subtle.ConstantTimeCompare([]byte(prev), []byte(secret)) == 1 {
+		// 值没变：不轮换，也不刷新时间戳（否则宽限期会被无限续命）
+		return s.NodeSecretRotatedAt(), nil
+	}
+	now := time.Now().Unix()
+	// 1) 保留上一把（首次配置时 prev 为空，直接跳过）
+	if err := AllService.SettingService.Set(SettingKeyNodeSecretPrev, prev); err != nil {
+		return 0, err
+	}
+	// 2) 写入新值
+	if err := AllService.SettingService.Set(SettingKeyNodeSecret, secret); err != nil {
+		return 0, err
+	}
+	// 3) 记录轮换时间（宽限期计算基准）
+	if err := AllService.SettingService.Set(SettingKeyNodeSecretRotatedAt, strconv.FormatInt(now, 10)); err != nil {
+		return 0, err
+	}
+	return now, nil
 }
 
 // TouchRtt 健康检查时回填 api-server 到该节点的 TCP 建连耗时（-1 = 未知/失败）。

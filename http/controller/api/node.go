@@ -128,6 +128,7 @@ func (n *Node) SelfRegion(c *gin.Context) {
 	stored := service.AllService.NodeService.PeerRegion(req.PeerId)
 	response.Success(c, gin.H{"region": stored, "source": map[bool]string{true: "client", false: "server"}[req.Region != ""]})
 }
+
 // NodeConfig 节点拉取 api-server 下发的配置。
 //
 // 节点定期调用，按返回的 config 热应用能改的项（中继列表、限速等）；
@@ -147,4 +148,25 @@ func (n *Node) NodeConfig(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"config": cfg, "version": version})
+}
+
+// Secret 节点拉取当前接入密钥（密钥轮换后自动更新用）。
+//
+// 鉴权在 NodeSecretAuth：节点必须带**当前密钥或宽限期内的上一把密钥**才能取，
+// 因此轮换后仍在用旧密钥的节点可以在这里拿到新值并热更新，无需登录服务器改
+// systemd 环境变量。
+//
+// 未配置密钥时返回空串（rotated_at=0），节点应忽略空值、保持现有密钥不变。
+// @Tags 集群节点
+// @Summary 拉取节点接入密钥
+// @Router /node/secret [get]
+func (n *Node) Secret(c *gin.Context) {
+	secret := service.AllService.NodeService.NodeSecret()
+	rotatedAt := service.AllService.NodeService.NodeSecretRotatedAt()
+	response.Success(c, gin.H{
+		"secret":     secret,
+		"rotated_at": rotatedAt,
+		// 节点据此知道自己是靠旧密钥通过校验的，可打日志提示即将过期
+		"using_prev": c.GetBool("node_secret_using_prev"),
+	})
 }

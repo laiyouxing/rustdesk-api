@@ -121,6 +121,8 @@ func ApiInit(g *gin.Engine) {
 	frg.GET("/node/regions", middleware.ProcessMonitorAuth(), nd.Regions)
 	frg.POST("/node/self-region", middleware.ProcessMonitorAuth(), nd.SelfRegion)
 	frg.GET("/node/config", middleware.ProcessMonitorAuth(), middleware.NodeSecretAuth(), nd.NodeConfig)
+	// 密钥轮换后节点通过这里拉新密钥（旧密钥在宽限期内也能取，避免轮换即掉线）
+	frg.GET("/node/secret", middleware.ProcessMonitorAuth(), middleware.NodeSecretAuth(), nd.Secret)
 	}
 
 	// 订阅支付回调（公开）
