@@ -1,4 +1,4 @@
-﻿package router
+package router
 
 import (
 	"github.com/gin-gonic/gin"
@@ -260,6 +260,11 @@ func PeerBind(rg *gin.RouterGroup) {
 		aR.POST("/update", cont.Update)
 		aR.POST("/delete", cont.Delete)
 		aR.POST("/batchDelete", cont.BatchDelete)
+		// 地域批量下发（不由配置文件维护）
+		rgn := &admin.Region{}
+		aR.GET("/regions", rgn.List)
+		aR.POST("/batch-region", rgn.BatchSet)
+		aR.POST("/batch-region-by-row", rgn.BatchSetByRowId)
 	}
 }
 
@@ -377,6 +382,7 @@ func ConfigBind(rg *gin.RouterGroup) {
 	aNd.GET("/score-config", nd.ScoreConfig)
 	aNd.POST("/score-config", nd.SaveScoreConfig)
 	aNd.POST("/refresh", nd.Refresh)
+	aNd.GET("/regions", (&admin.Region{}).List)
 	aNd.GET("/static-relays", nd.StaticRelays)
 	aNd.POST("/static-relays", nd.SaveStaticRelays)
 	aRr.POST("/update", rp.Update)
