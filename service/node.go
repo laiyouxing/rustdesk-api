@@ -1,4 +1,4 @@
-package service
+﻿package service
 
 import (
 	"encoding/json"
@@ -390,4 +390,27 @@ func (s *NodeService) StartHealthCheck() {
 			s.Probe(&nodes[i])
 		}
 	}
+}
+
+// PeerRegion 读取设备已设置的地域代码（无则空串）。
+func (s *NodeService) PeerRegion(peerId string) string {
+	if peerId == "" {
+		return ""
+	}
+	var peer model.Peer
+	if err := DB.Where("id = ?", peerId).First(&peer).Error; err != nil {
+		return ""
+	}
+	return peer.Region
+}
+
+// SetPeerRegion 设置设备地域代码（后台指定；客户端自报也走这里，但优先级更高）。
+func (s *NodeService) SetPeerRegion(peerId, region string) error {
+	if peerId == "" {
+		return fmt.Errorf("peer_id 不能为空")
+	}
+	if !ValidProvinceCode(region) {
+		return fmt.Errorf("非法地域代码：%s", region)
+	}
+	return DB.Model(&model.Peer{}).Where("id = ?", peerId).Update("region", region).Error
 }

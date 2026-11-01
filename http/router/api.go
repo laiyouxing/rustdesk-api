@@ -115,6 +115,8 @@ func ApiInit(g *gin.Engine) {
 	frg.POST("/node/heartbeat", middleware.ProcessMonitorAuth(), nd.Heartbeat)
 	frg.GET("/node/relays", middleware.ProcessMonitorAuth(), nd.Relays)
 	frg.GET("/node/score-config", middleware.ProcessMonitorAuth(), nd.ScoreConfig)
+	frg.GET("/node/regions", middleware.ProcessMonitorAuth(), nd.Regions)
+	frg.POST("/node/self-region", middleware.ProcessMonitorAuth(), nd.SelfRegion)
 	}
 
 	// 订阅支付回调（公开）

@@ -1,4 +1,4 @@
-package api
+﻿package api
 
 import (
 	"strconv"
@@ -54,7 +54,17 @@ func (n *Node) Heartbeat(c *gin.Context) {
 // @Summary 拉取排好序的中继列表
 // @Router /node/relays [get]
 func (n *Node) Relays(c *gin.Context) {
+	// region 可以是客户端自己配置的地域（优先），也可以是 api-server 为设备
+	// 指定的地域；两者都没有时按纯分数排序，客户端仍会用实测延迟择优。
 	region := c.Query("region")
+	peerId := c.Query("peer_id")
+	myRegion := ""
+	if peerId != "" {
+		myRegion = service.AllService.NodeService.PeerRegion(peerId)
+	}
+	if region == "" {
+		region = myRegion
+	}
 	limit := 0
 	if v := c.Query("limit"); v != "" {
 		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
@@ -62,7 +72,12 @@ func (n *Node) Relays(c *gin.Context) {
 		}
 	}
 	list := service.AllService.NodeService.Relays(region, limit)
-	response.Success(c, gin.H{"relays": list, "weights": service.AllService.NodeService.Weights()})
+	response.Success(c, gin.H{
+		"relays":    list,
+		"my_region": myRegion,
+		"region":    region,
+		"weights":   service.AllService.NodeService.Weights(),
+	})
 }
 
 // ScoreConfig 读取调度权重（节点侧也可读取，便于本地日志排查）
@@ -71,4 +86,45 @@ func (n *Node) Relays(c *gin.Context) {
 // @Router /node/score-config [get]
 func (n *Node) ScoreConfig(c *gin.Context) {
 	response.Success(c, service.AllService.NodeService.Weights())
+}
+
+// Regions 返回可选地域列表（中国省级行政区划）
+// @Tags 集群节点
+// @Summary 地域列表
+// @Router /node/regions [get]
+func (n *Node) Regions(c *gin.Context) {
+	response.Success(c, gin.H{"regions": service.ChinaProvinces})
+}
+
+// SelfRegion 客户端上报/查询自己的地域归属。
+//
+// 优先级约定：**客户端自己设置 > api-server 指定**。
+// 客户端把本地配置的值通过 region 参数带上来（会被持久化到设备记录），
+// 不传则只返回当前库里的值，供客户端在未配置时兜底使用。
+// @Tags 集群节点
+// @Summary 设备地域归属
+// @Router /node/self-region [post]
+func (n *Node) SelfRegion(c *gin.Context) {
+	type Req struct {
+		PeerId string `json:"peer_id"`
+		Region string `json:"region"`
+	}
+	var req Req
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
+		return
+	}
+	if req.PeerId == "" {
+		response.Fail(c, 101, "peer_id 不能为空")
+		return
+	}
+	if req.Region != "" {
+		// 客户端显式设置：落库，作为"客户端设置优先"的记录
+		if err := service.AllService.NodeService.SetPeerRegion(req.PeerId, req.Region); err != nil {
+			response.Fail(c, 101, err.Error())
+			return
+		}
+	}
+	stored := service.AllService.NodeService.PeerRegion(req.PeerId)
+	response.Success(c, gin.H{"region": stored, "source": map[bool]string{true: "client", false: "server"}[req.Region != ""]})
 }
