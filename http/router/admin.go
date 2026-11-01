@@ -387,6 +387,11 @@ func ConfigBind(rg *gin.RouterGroup) {
 	aNd.POST("/config", nd.SaveConfig)
 	aNd.GET("/static-relays", nd.StaticRelays)
 	aNd.POST("/static-relays", nd.SaveStaticRelays)
+	// 解除平台接管（Overrides 不能是单行道）
+	aNd.POST("/unlock", nd.Unlock)
+	// 节点专用密钥（X-Node-Secret）
+	aNd.GET("/secret", nd.GetSecret)
+	aNd.POST("/secret", nd.SaveSecret)
 	aRr.POST("/update", rp.Update)
 
 	// 重启服务：仅管理员

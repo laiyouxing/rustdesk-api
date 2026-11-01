@@ -109,15 +109,18 @@ func ApiInit(g *gin.Engine) {
 		frg.POST("/punch/direct-ok", middleware.ProcessMonitorAuth(), pu.DirectOk)
 
 	// 集群节点：hbbs / hbbr 注册、心跳、拉取调度后的中继列表。
-	// 节点部署在公网，按"公网 + 密钥"约定，复用 ProcessMonitorAuth（校验 rustdesk key / JWT）。
+	// 节点部署在公网，按"公网 + 节点专用密钥"约定：
+	//   - ProcessMonitorAuth 确认这是已知设备/已登录用户；
+	//   - NodeSecretAuth 再校验 X-Node-Secret（未配置 node.secret 时放行并告警）。
+	// 只靠 ProcessMonitorAuth 不够：它接受的 rustdesk key 是公开信息。
 	nd := &api.Node{}
-	frg.POST("/node/register", middleware.ProcessMonitorAuth(), nd.Register)
-	frg.POST("/node/heartbeat", middleware.ProcessMonitorAuth(), nd.Heartbeat)
+	frg.POST("/node/register", middleware.ProcessMonitorAuth(), middleware.NodeSecretAuth(), nd.Register)
+	frg.POST("/node/heartbeat", middleware.ProcessMonitorAuth(), middleware.NodeSecretAuth(), nd.Heartbeat)
 	frg.GET("/node/relays", middleware.ProcessMonitorAuth(), nd.Relays)
 	frg.GET("/node/score-config", middleware.ProcessMonitorAuth(), nd.ScoreConfig)
 	frg.GET("/node/regions", middleware.ProcessMonitorAuth(), nd.Regions)
 	frg.POST("/node/self-region", middleware.ProcessMonitorAuth(), nd.SelfRegion)
-	frg.GET("/node/config", middleware.ProcessMonitorAuth(), nd.NodeConfig)
+	frg.GET("/node/config", middleware.ProcessMonitorAuth(), middleware.NodeSecretAuth(), nd.NodeConfig)
 	}
 
 	// 订阅支付回调（公开）

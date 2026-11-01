@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/lejianwen/rustdesk-api/v2/global"
 	"github.com/lejianwen/rustdesk-api/v2/model"
+	"gorm.io/gorm"
 )
 
 // 集群节点相关设置键
@@ -25,7 +27,19 @@ const (
 	// 缩减（例如 3 台变 1 台），反而降低可用性。这里改为**合并**：调度结果
 	// 在前（按分数排序），静态中继补在后面兜底。
 	SettingKeyNodeStaticRelays = "node.static_relays"
+	// SettingKeyNodeSecret 节点专用密钥（请求头 X-Node-Secret）。
+	//
+	// ProcessMonitorAuth 接受的 rustdesk key 是 hbbs 公钥，会下发给每个客户端，
+	// 等于公开信息；仅靠它无法阻止任何人伪造节点。节点写接口额外校验这个
+	// 专用密钥；未配置时告警并放行（兼容升级）。
+	SettingKeyNodeSecret = "node.secret"
 )
+
+// maxNodeConfigBytes 节点配置 JSON 的大小上限（64KB）。
+const maxNodeConfigBytes = 64 << 10
+
+// validNodeKinds 允许注册的节点类型。
+var validNodeKinds = map[string]bool{"hbbs": true, "hbbr": true}
 
 // NodeScoreWeights 多因子调度的权重。
 //
@@ -83,7 +97,33 @@ type NodeHeartbeatForm struct {
 	Version   string `json:"version"`
 }
 
-// Register 节点注册（幂等：已存在则更新静态信息，不覆盖管理员改过的 weight/region）。
+// parseOverrideList 解析 Overrides 字段（JSON 字符串数组）。
+//
+// 内容损坏时**告警**而不是静默忽略：静默会让"平台接管保护"悄悄失效，
+// 管理员在后台改的值下一轮注册就被节点冲回去，且没有任何线索。
+func parseOverrideList(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	list := []string{}
+	if err := json.Unmarshal([]byte(raw), &list); err != nil {
+		global.Logger.Warnf("[Node] overrides 内容损坏，按未接管处理（平台保护可能失效）：%q err=%v", raw, err)
+		return nil
+	}
+	return list
+}
+
+func overrideSet(list []string) map[string]bool {
+	set := make(map[string]bool, len(list))
+	for _, k := range list {
+		if k != "" {
+			set[k] = true
+		}
+	}
+	return set
+}
+
+// Register 节点注册（幂等：已存在则更新静态信息，不覆盖平台已接管的字段）。
 func (s *NodeService) Register(f *NodeRegisterForm) (*model.ServerNode, error) {
 	// 地域必须与客户端使用同一套省份 code，否则永远匹配不上；
 	// 非法值不阻断注册（可能是环境变量写错，不该让节点失联），降级为空并告警。
@@ -91,12 +131,38 @@ func (s *NodeService) Register(f *NodeRegisterForm) (*model.ServerNode, error) {
 		global.Logger.Warnf("[Node] 节点 %s 上报了非法地域 %q，已忽略（应使用省份 code，如 GD/GX）", f.NodeId, f.Region)
 		f.Region = ""
 	}
+	f.Kind = strings.TrimSpace(f.Kind)
+	f.NodeId = strings.TrimSpace(f.NodeId)
+	f.Addr = strings.TrimSpace(f.Addr)
+	f.LanAddr = strings.TrimSpace(f.LanAddr)
 	if f.NodeId == "" || f.Addr == "" || f.Kind == "" {
 		return nil, fmt.Errorf("node_id/kind/addr 不能为空")
 	}
+	if !validNodeKinds[f.Kind] {
+		return nil, fmt.Errorf("非法节点类型 kind=%q（只支持 hbbs / hbbr）", f.Kind)
+	}
+
 	var node model.ServerNode
-	err := DB.Where(&model.ServerNode{NodeId: f.NodeId}).First(&node).Error
-	if err != nil {
+	found := true
+	if err := DB.Where(&model.ServerNode{NodeId: f.NodeId}).First(&node).Error; err != nil {
+		found = false
+		// node_id 约定为 `{kind}@{addr}`，而 addr 未显式配置时是节点自动探测的
+		// 公网 IP：IP 一变 node_id 就变，若直接建新行，旧行会变成永远离线的
+		// 幽灵记录，且平台配置（config/overrides/weight）全部留在旧行上丢失。
+		// 这里回退用 `kind + lan_addr` 识别同一台物理机：lan_addr 由部署者手工
+		// 指定，比公网 IP 稳定；只有唯一命中时才复用，避免误合并。
+		if f.LanAddr != "" {
+			candidates := make([]model.ServerNode, 0, 2)
+			if e := DB.Where("kind = ? AND lan_addr = ?", f.Kind, f.LanAddr).Limit(2).Find(&candidates).Error; e == nil && len(candidates) == 1 {
+				node = candidates[0]
+				found = true
+				global.Logger.Infof("[Node] node_id 未命中（%s），按 kind+lan_addr 复用已有节点 id=%d old_node_id=%s",
+					f.NodeId, node.Id, node.NodeId)
+			}
+		}
+	}
+
+	if !found {
 		// 新节点
 		node = model.ServerNode{
 			NodeId:      f.NodeId,
@@ -109,7 +175,10 @@ func (s *NodeService) Register(f *NodeRegisterForm) (*model.ServerNode, error) {
 			Weight:      f.Weight,
 			MaxSessions: f.MaxSessions,
 			Status:      1,
-			LastSeen:    time.Now().Unix(),
+			// -1 = 未知/探测失败：节点刚注册，健康检查还没探测过。
+			// 不能用 0，否则会被评分当成"0ms 最优"。
+			RttMs:    -1,
+			LastSeen: time.Now().Unix(),
 		}
 		if node.Weight == 0 {
 			node.Weight = 100
@@ -120,17 +189,11 @@ func (s *NodeService) Register(f *NodeRegisterForm) (*model.ServerNode, error) {
 		global.Logger.Infof("[Node] 新节点注册：%s kind=%s addr=%s region=%s", node.NodeId, node.Kind, node.Addr, node.Region)
 		return &node, nil
 	}
-	// 已存在：只更新由节点自身上报的字段；weight/region/disabled 由管理员掌控，
-	// 仅当节点显式带值且当前为空时才补。
-	// 平台已接管的字段不再被节点上报覆盖（平台优先）
-	lockedList := []string{}
-	locked := map[string]bool{}
-	if node.Overrides != "" {
-		_ = json.Unmarshal([]byte(node.Overrides), &lockedList)
-		for _, k := range lockedList {
-			locked[k] = true
-		}
-	}
+
+	// 已存在（或按 lan_addr 复用）：只更新由节点自身上报的字段；
+	// weight/region/disabled 由管理员掌控，仅当节点显式带值且当前为空时才补。
+	// 平台已接管的字段不再被节点上报覆盖（平台优先）。
+	locked := overrideSet(parseOverrideList(node.Overrides))
 	updates := map[string]interface{}{
 		"version":   f.Version,
 		"status":    1,
@@ -148,13 +211,18 @@ func (s *NodeService) Register(f *NodeRegisterForm) (*model.ServerNode, error) {
 	if f.MaxSessions > 0 && !locked["max_sessions"] {
 		updates["max_sessions"] = f.MaxSessions
 	}
-	if node.Region == "" && f.Region != "" {
+	if node.Region == "" && f.Region != "" && !locked["region"] {
 		updates["region"] = f.Region
+	}
+	// 按 lan_addr 复用时 node_id 仍是旧的 `{kind}@{旧addr}`，必须同步成新值；
+	// 否则唯一索引里留着旧标识，下次注册又要走一遍回退匹配。
+	if node.NodeId != f.NodeId {
+		updates["node_id"] = f.NodeId
 	}
 	if err := DB.Model(&model.ServerNode{}).Where("id = ?", node.Id).Updates(updates).Error; err != nil {
 		return nil, err
 	}
-	global.Logger.Infof("[Node] 节点重新注册：%s addr=%s", node.NodeId, f.Addr)
+	global.Logger.Infof("[Node] 节点重新注册：%s addr=%s", f.NodeId, f.Addr)
 	DB.Where("id = ?", node.Id).First(&node)
 	return &node, nil
 }
@@ -163,6 +231,16 @@ func (s *NodeService) Register(f *NodeRegisterForm) (*model.ServerNode, error) {
 func (s *NodeService) Heartbeat(f *NodeHeartbeatForm) error {
 	if f.NodeId == "" {
 		return fmt.Errorf("node_id 不能为空")
+	}
+	// 先显式判断节点是否存在：不能用 RowsAffected==0 判断。
+	// MySQL 默认返回"实际变更行数"，同一秒内两次心跳的值完全相同会被判成 0，
+	// 进而误报"节点未注册"，让 agent 反复重新注册。
+	var cnt int64
+	if err := DB.Model(&model.ServerNode{}).Where("node_id = ?", f.NodeId).Count(&cnt).Error; err != nil {
+		return err
+	}
+	if cnt == 0 {
+		return fmt.Errorf("节点未注册：%s", f.NodeId)
 	}
 	updates := map[string]interface{}{
 		"peers":      f.Peers,
@@ -178,14 +256,7 @@ func (s *NodeService) Heartbeat(f *NodeHeartbeatForm) error {
 	if f.Version != "" {
 		updates["version"] = f.Version
 	}
-	res := DB.Model(&model.ServerNode{}).Where("node_id = ?", f.NodeId).Updates(updates)
-	if res.Error != nil {
-		return res.Error
-	}
-	if res.RowsAffected == 0 {
-		return fmt.Errorf("节点未注册：%s", f.NodeId)
-	}
-	return nil
+	return DB.Model(&model.ServerNode{}).Where("node_id = ?", f.NodeId).Updates(updates).Error
 }
 
 // OfflineSec 心跳超时秒数（默认 60 秒）。
@@ -273,7 +344,12 @@ func (s *NodeService) Score(n *model.ServerNode, w NodeScoreWeights) float64 {
 	sBw := normalize(float64(n.BwIn+n.BwOut), 1024*1024*1024)
 	sCpu := normalize(float64(n.CpuPct), 100)
 	sMem := normalize(float64(n.MemPct), 100)
-	sRtt := normalize(float64(n.RttMs), 500)
+	// 延迟：RttMs < 0 表示未知/探测失败，按最大成本 1.0 计。
+	// 绝不能把"未知"当成 0ms——那会让探测不到的节点稳排第一。
+	sRtt := 1.0
+	if n.RttMs >= 0 {
+		sRtt = normalize(float64(n.RttMs), 500)
+	}
 	// 人工权重：语义是"越希望用它越调大"，这里统一折算成**成本**：
 	// 权重 100 → 成本 0；权重 0 → 成本 1。
 	// 这样所有项都是"成本"，方向一致（总和越小越优先），
@@ -291,7 +367,7 @@ func (s *NodeService) Score(n *model.ServerNode, w NodeScoreWeights) float64 {
 
 // Relays 返回按调度分数排序的可用中继列表（供 hbbs 拉取，或直接下发给客户端）。
 //
-// 只包含：kind=hbbr、在线、未被管理员下线。
+// 内容 = 已注册在线且未下线的 hbbr（按分数排序）+ 静态中继兜底（去重）。
 func (s *NodeService) Relays(region string, limit int) []map[string]interface{} {
 	nodes := s.List("hbbr")
 	w := s.Weights()
@@ -326,11 +402,16 @@ func (s *NodeService) Relays(region string, limit int) []map[string]interface{} 
 		}
 		return list[i].score < list[j].score
 	})
+	// 先合并去重（调度结果 + 静态兜底），再统一按 limit 截断。
+	// 顺序很关键：若先按 limit 截断调度结果，静态地址又恰好是"被截掉的
+	// 在线节点"，去重逻辑会把它也丢掉，最终该地址彻底消失。
+	seen := make(map[string]bool, len(list)+8)
 	out := make([]map[string]interface{}, 0, len(list)+8)
-	for i, it := range list {
-		if limit > 0 && i >= limit {
-			break
+	for _, it := range list {
+		if it.node.Addr == "" || seen[it.node.Addr] {
+			continue
 		}
+		seen[it.node.Addr] = true
 		item := map[string]interface{}{
 			"addr":     it.node.Addr,
 			"score":    it.score,
@@ -343,25 +424,13 @@ func (s *NodeService) Relays(region string, limit int) []map[string]interface{} 
 		}
 		out = append(out, item)
 	}
-	// 追加静态中继兜底（去重）：保证未接入 agent 的中继不会被调度结果挤掉。
+	// 追加静态中继兜底：保证未接入 agent 的中继不会被调度结果挤掉。
 	// 调度只覆盖"已注册且在线"的节点，过渡期内中继数量可能少于静态配置。
 	for _, addr := range s.StaticRelays() {
-		dup := false
-		for _, it := range list {
-			if it.node.Addr == addr {
-				dup = true
-				break
-			}
-		}
-		for _, x := range out {
-			if x["addr"] == addr {
-				dup = true
-				break
-			}
-		}
-		if dup {
+		if seen[addr] {
 			continue
 		}
+		seen[addr] = true
 		out = append(out, map[string]interface{}{
 			"addr":   addr,
 			"score":  9999.0,
@@ -369,10 +438,25 @@ func (s *NodeService) Relays(region string, limit int) []map[string]interface{} 
 			"static": true,
 		})
 	}
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
 	return out
 }
 
-// TouchRtt 健康检查时回填 api-server 到该节点的 TCP 建连耗时。
+// ValidHostPort 校验地址是否为合法的 host:port（节点地址 / 静态中继共用）。
+func ValidHostPort(addr string) bool {
+	addr = strings.TrimSpace(addr)
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil || strings.TrimSpace(host) == "" || port == "" {
+		return false
+	}
+	p, err := strconv.Atoi(port)
+	if err != nil || p <= 0 || p > 65535 {
+		return false
+	}
+	return true
+}
 
 // StaticRelays 读取静态中继兜底列表（逗号分隔）。
 func (s *NodeService) StaticRelays() []string {
@@ -381,19 +465,47 @@ func (s *NodeService) StaticRelays() []string {
 		return nil
 	}
 	out := make([]string, 0, 4)
+	seen := make(map[string]bool, 4)
 	for _, a := range strings.Split(v, ",") {
 		a = strings.TrimSpace(a)
-		if a != "" {
+		if a != "" && !seen[a] {
+			seen[a] = true
 			out = append(out, a)
 		}
 	}
 	return out
 }
 
-// SaveStaticRelays 保存静态中继兜底列表。
+// SaveStaticRelays 保存静态中继兜底列表（去空白、去重、校验 host:port）。
 func (s *NodeService) SaveStaticRelays(list []string) error {
-	return AllService.SettingService.Set(SettingKeyNodeStaticRelays, strings.Join(list, ","))
+	cleaned := make([]string, 0, len(list))
+	seen := make(map[string]bool, len(list))
+	for _, a := range list {
+		a = strings.TrimSpace(a)
+		if a == "" || seen[a] {
+			continue
+		}
+		if !ValidHostPort(a) {
+			return fmt.Errorf("非法中继地址 %q（应为 host:port，如 1.2.3.4:21117）", a)
+		}
+		seen[a] = true
+		cleaned = append(cleaned, a)
+	}
+	return AllService.SettingService.Set(SettingKeyNodeStaticRelays, strings.Join(cleaned, ","))
 }
+
+// NodeSecret 读取节点专用密钥（未配置返回空串）。
+func (s *NodeService) NodeSecret() string {
+	v, _ := AllService.SettingService.Get(SettingKeyNodeSecret)
+	return strings.TrimSpace(v)
+}
+
+// SaveNodeSecret 保存节点专用密钥（传空串表示清除，即回到"未配置"状态）。
+func (s *NodeService) SaveNodeSecret(secret string) error {
+	return AllService.SettingService.Set(SettingKeyNodeSecret, strings.TrimSpace(secret))
+}
+
+// TouchRtt 健康检查时回填 api-server 到该节点的 TCP 建连耗时（-1 = 未知/失败）。
 func (s *NodeService) TouchRtt(id uint, rttMs int) {
 	res := DB.Model(&model.ServerNode{}).Where("id = ?", id).Update("rtt_ms", rttMs)
 	// 诊断：id 为 0 或影响行数为 0 时 rtt 永远写不进去，必须显式暴露出来，
@@ -417,18 +529,18 @@ func (s *NodeService) Probe(n *model.ServerNode) {
 	conn, err := net.DialTimeout("tcp", target, 1200*time.Millisecond)
 	if err != nil {
 		global.Logger.Warnf("[Node] 探测 %s 失败: %v (addr=%s lan=%s)", target, err, n.Addr, n.LanAddr)
-		// 探测失败只清空 RTT，**不改在线状态**——在线与否由心跳判定。
-		DB.Model(&model.ServerNode{}).Where("id = ?", n.Id).Update("rtt_ms", 0)
+		// 探测失败写 -1（未知），**不改在线状态**——在线与否由心跳判定。
+		// 不能写 0：0 是合法的"同机 0ms"，会让评分把探测不到节点排到最前。
+		DB.Model(&model.ServerNode{}).Where("id = ?", n.Id).Update("rtt_ms", -1)
 		return
 	}
-	_ = conn.Close()
 	_ = conn.Close()
 	ms := int(time.Since(begin).Milliseconds())
 	global.Logger.Infof("[Node] 探测 %s 成功: %dms", target, ms)
 	s.TouchRtt(n.Id, ms)
 }
 
-// StartHealthCheck 定时健康检查：探测可达性、判定离线。
+// StartHealthCheck 定时健康检查：探测可达性并回填 RTT（在线状态由心跳判定）。
 func (s *NodeService) StartHealthCheck() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
@@ -462,31 +574,104 @@ func (s *NodeService) SetPeerRegion(peerId, region string) error {
 	}
 	return DB.Model(&model.Peer{}).Where("id = ?", peerId).Update("region", region).Error
 }
-// GetConfig 读取节点配置（JSON 文本）与其版本号（用 UpdatedAt 当版本）。
+
+// GetConfig 读取节点配置（JSON 文本）与其版本号。
+//
+// 版本号用 ConfigVersion（仅 SaveConfig 时 +1），不能用行上的 UpdatedAt：
+// 心跳/探测/写评分都会刷新 UpdatedAt，版本号会每 15 秒变一次。
 func (s *NodeService) GetConfig(nodeId string) (string, int64, error) {
 	var node model.ServerNode
 	if err := DB.Where("node_id = ?", nodeId).First(&node).Error; err != nil {
 		return "", 0, fmt.Errorf("节点不存在：%s", nodeId)
 	}
-	return node.Config, node.UpdatedAt, nil
+	return node.Config, node.ConfigVersion, nil
 }
 
 // SaveConfig 保存节点配置（管理员下发）。返回新版本号。
+//
+// 配置约定（与节点 agent 侧一致）：
+//   - relay_servers: []string，元素为 host:port
+//   - limit_speed_mbps / single_bandwidth_mbps / total_bandwidth_mbps: 整数，Mbit/s
+//   - downgrade_threshold: 浮点 0~1（比例，不是百分数）
+//   - downgrade_start_check_sec: 整数，秒
 func (s *NodeService) SaveConfig(id uint, cfg string) (int64, error) {
-	if cfg == "" {
+	if strings.TrimSpace(cfg) == "" {
 		cfg = "{}"
+	}
+	if len(cfg) > maxNodeConfigBytes {
+		return 0, fmt.Errorf("配置过大：%d 字节（上限 %d 字节）", len(cfg), maxNodeConfigBytes)
 	}
 	var probe map[string]interface{}
 	if err := json.Unmarshal([]byte(cfg), &probe); err != nil {
 		return 0, fmt.Errorf("配置不是合法 JSON：%v", err)
 	}
-	if err := DB.Model(&model.ServerNode{}).Where("id = ?", id).Update("config", cfg).Error; err != nil {
+	if err := validateNodeConfig(probe); err != nil {
 		return 0, err
 	}
+	res := DB.Model(&model.ServerNode{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"config":         cfg,
+		"config_version": gorm.Expr("config_version + 1"),
+	})
+	if res.Error != nil {
+		return 0, res.Error
+	}
+	if res.RowsAffected == 0 {
+		return 0, fmt.Errorf("节点不存在：id=%d", id)
+	}
 	var node model.ServerNode
-	DB.Where("id = ?", id).First(&node)
-	return node.UpdatedAt, nil
+	if err := DB.Where("id = ?", id).First(&node).Error; err != nil {
+		return 0, err
+	}
+	return node.ConfigVersion, nil
 }
+
+// validateNodeConfig 校验节点配置里已知键的量纲，避免后台填错单位后静默生效。
+// 未知键不校验（便于节点侧扩展）。
+func validateNodeConfig(cfg map[string]interface{}) error {
+	if v, ok := cfg["relay_servers"]; ok && v != nil {
+		arr, ok := v.([]interface{})
+		if !ok {
+			return fmt.Errorf("relay_servers 必须是字符串数组")
+		}
+		for _, it := range arr {
+			str, ok := it.(string)
+			if !ok {
+				return fmt.Errorf("relay_servers 元素必须是字符串")
+			}
+			if str == "" {
+				continue
+			}
+			if !ValidHostPort(str) {
+				return fmt.Errorf("relay_servers 元素 %q 非法（应为 host:port）", str)
+			}
+		}
+	}
+	intKeys := []string{"limit_speed_mbps", "single_bandwidth_mbps", "total_bandwidth_mbps", "downgrade_start_check_sec"}
+	for _, k := range intKeys {
+		v, ok := cfg[k]
+		if !ok || v == nil {
+			continue
+		}
+		f, ok := v.(float64)
+		if !ok {
+			return fmt.Errorf("%s 必须是数字", k)
+		}
+		if f < 0 || f > 1e9 || f != float64(int64(f)) {
+			return fmt.Errorf("%s 必须是非负整数", k)
+		}
+	}
+	if v, ok := cfg["downgrade_threshold"]; ok && v != nil {
+		f, ok := v.(float64)
+		if !ok {
+			return fmt.Errorf("downgrade_threshold 必须是数字")
+		}
+		if f < 0 || f > 1 {
+			return fmt.Errorf("downgrade_threshold 必须在 0~1 之间（比例，不是百分数）")
+		}
+	}
+	return nil
+}
+
 // MarkOverrides 记录管理员在后台接管的字段（追加合并，去重）。
 //
 // 典型场景：节点上报的 addr 是自动探测结果，管理员发现不对在后台改掉，
@@ -499,15 +684,7 @@ func (s *NodeService) MarkOverrides(id uint, fields []string) error {
 	if err := DB.Where("id = ?", id).First(&node).Error; err != nil {
 		return err
 	}
-	set := map[string]bool{}
-	if node.Overrides != "" {
-		list := []string{}
-		if err := json.Unmarshal([]byte(node.Overrides), &list); err == nil {
-			for _, k := range list {
-				set[k] = true
-			}
-		}
-	}
+	set := overrideSet(parseOverrideList(node.Overrides))
 	for _, k := range fields {
 		if k != "" {
 			set[k] = true
@@ -519,6 +696,38 @@ func (s *NodeService) MarkOverrides(id uint, fields []string) error {
 	}
 	sort.Strings(list)
 	b, err := json.Marshal(list)
+	if err != nil {
+		return err
+	}
+	return DB.Model(&model.ServerNode{}).Where("id = ?", id).Update("overrides", string(b)).Error
+}
+
+// UnlockOverrides 解除平台接管：fields 为空表示解除全部，否则只解除列出的字段。
+//
+// 没有这个入口时 Overrides 是"单行道"：管理员一旦接管过某字段，节点自身
+// 上报的新值（例如换机后的内网地址）永远同步不回来，只能手工改库。
+func (s *NodeService) UnlockOverrides(id uint, fields []string) error {
+	var node model.ServerNode
+	if err := DB.Where("id = ?", id).First(&node).Error; err != nil {
+		return err
+	}
+	if len(fields) == 0 {
+		return DB.Model(&model.ServerNode{}).Where("id = ?", id).Update("overrides", "").Error
+	}
+	drop := make(map[string]bool, len(fields))
+	for _, k := range fields {
+		if k != "" {
+			drop[k] = true
+		}
+	}
+	kept := make([]string, 0, 4)
+	for _, k := range parseOverrideList(node.Overrides) {
+		if !drop[k] {
+			kept = append(kept, k)
+		}
+	}
+	sort.Strings(kept)
+	b, err := json.Marshal(kept)
 	if err != nil {
 		return err
 	}

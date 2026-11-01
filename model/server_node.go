@@ -20,7 +20,7 @@ type ServerNode struct {
 	Addr string `json:"addr" gorm:"size:200;not null"`
 	// LanAddr 内网地址（可选），供同内网客户端直连，避免绕公网
 	LanAddr string `json:"lan_addr" gorm:"size:200"`
-	// Region 地域标识（如 gz/bj/hc），用于就近调度
+	// Region 地域标识（省级 code，如 GD/GX），用于就近调度
 	Region string `json:"region" gorm:"size:64;index"`
 	// Version 节点上报的版本号
 	Version string `json:"version" gorm:"size:64"`
@@ -41,7 +41,11 @@ type ServerNode struct {
 	CpuPct    int   `json:"cpu_pct"`
 	MemPct    int   `json:"mem_pct"`
 	UptimeSec int64 `json:"uptime_sec"`
-	// RttMs api-server 侧对节点的探测延迟（由健康检查回填）
+	// RttMs api-server 侧对节点的探测延迟（由健康检查回填）。
+	//
+	// 语义：-1 = 未知/探测失败，>=0 = 真实毫秒。
+	// 必须区分「未知」与「0ms」：评分时未知按最大成本计算，
+	// 否则探测不到的节点会被当成 0ms 排到最前。
 	RttMs int `json:"rtt_ms"`
 
 	// Score 最近一次计算的负载评分（越小越优先），便于前端直接展示
@@ -55,6 +59,12 @@ type ServerNode struct {
 	// 节点 agent 定期拉取并热应用（中继列表 / 限速等），
 	// 无法热改的（key/端口/mask）只做展示，需重启生效。
 	Config string `json:"config" gorm:"type:text"`
+
+	// ConfigVersion 配置版本号：仅在 SaveConfig 时 +1。
+	//
+	// 注意：不能用行上的 UpdatedAt 当配置版本——心跳/探测/写评分都会刷新
+	// UpdatedAt，导致版本号每 15 秒变一次，节点无法据此判断配置是否变化。
+	ConfigVersion int64 `json:"config_version" gorm:"default:0"`
 
 	// Overrides 平台已接管的字段名（JSON 数组，如 ["addr","name"]）。
 	//
