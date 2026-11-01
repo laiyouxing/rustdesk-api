@@ -1,4 +1,4 @@
-﻿package service
+package service
 
 import (
 	"encoding/json"
@@ -37,7 +37,7 @@ type NodeScoreWeights struct {
 	CPU       float64 `json:"cpu"`       // CPU 占用
 	Mem       float64 `json:"mem"`       // 内存占用
 	RTT       float64 `json:"rtt"`       // api-server 到节点的探测延迟
-	Weight    float64 `json:"weight"`    // 人工权重（越大越优先，做负向）
+	Weight    float64 `json:"weight"`    // 人工权重（越大越优先，折算为更低的成本）
 }
 
 // DefaultNodeScoreWeights 默认权重：
@@ -246,13 +246,18 @@ func (s *NodeService) Score(n *model.ServerNode, w NodeScoreWeights) float64 {
 	sCpu := normalize(float64(n.CpuPct), 100)
 	sMem := normalize(float64(n.MemPct), 100)
 	sRtt := normalize(float64(n.RttMs), 500)
-	// 人工权重：越大越优先 → 分数越低
-	sWeight := normalize(float64(n.Weight), 100)
+	// 人工权重：语义是"越希望用它越调大"，这里统一折算成**成本**：
+	// 权重 100 → 成本 0；权重 0 → 成本 1。
+	// 这样所有项都是"成本"，方向一致（总和越小越优先），
+	// 不会再出现"负载项看小、人工项看大"的混乱。
+	sWeightCost := 1 - normalize(float64(n.Weight), 100)
 
-	score := w.Sessions*sSess + w.Bandwidth*sBw + w.CPU*sCpu + w.Mem*sMem + w.RTT*sRtt - w.Weight*sWeight
-	if score < -10 {
-		score = -10
-	}
+	score := w.Sessions*sSess +
+		w.Bandwidth*sBw +
+		w.CPU*sCpu +
+		w.Mem*sMem +
+		w.RTT*sRtt +
+		w.Weight*sWeightCost
 	return score
 }
 
