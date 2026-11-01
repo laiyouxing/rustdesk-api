@@ -64,6 +64,11 @@ func (n *Node) Update(c *gin.Context) {
 		updates["addr"] = *req.Addr
 	}
 	if req.Region != nil {
+		// 与客户端使用同一套省份 code，避免"节点填了别的值、永远匹配不上"
+		if !service.ValidProvinceCode(*req.Region) {
+			response.Fail(c, 101, "非法地域代码（应为省份代码，如 GD/GX；留空表示不设置）")
+			return
+		}
 		updates["region"] = *req.Region
 	}
 	if req.LanAddr != nil {

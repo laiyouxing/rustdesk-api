@@ -85,6 +85,12 @@ type NodeHeartbeatForm struct {
 
 // Register 节点注册（幂等：已存在则更新静态信息，不覆盖管理员改过的 weight/region）。
 func (s *NodeService) Register(f *NodeRegisterForm) (*model.ServerNode, error) {
+	// 地域必须与客户端使用同一套省份 code，否则永远匹配不上；
+	// 非法值不阻断注册（可能是环境变量写错，不该让节点失联），降级为空并告警。
+	if f.Region != "" && !ValidProvinceCode(f.Region) {
+		global.Logger.Warnf("[Node] 节点 %s 上报了非法地域 %q，已忽略（应使用省份 code，如 GD/GX）", f.NodeId, f.Region)
+		f.Region = ""
+	}
 	if f.NodeId == "" || f.Addr == "" || f.Kind == "" {
 		return nil, fmt.Errorf("node_id/kind/addr 不能为空")
 	}
