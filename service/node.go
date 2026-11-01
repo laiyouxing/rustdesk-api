@@ -122,19 +122,30 @@ func (s *NodeService) Register(f *NodeRegisterForm) (*model.ServerNode, error) {
 	}
 	// 已存在：只更新由节点自身上报的字段；weight/region/disabled 由管理员掌控，
 	// 仅当节点显式带值且当前为空时才补。
+	// 平台已接管的字段不再被节点上报覆盖（平台优先）
+	lockedList := []string{}
+	locked := map[string]bool{}
+	if node.Overrides != "" {
+		_ = json.Unmarshal([]byte(node.Overrides), &lockedList)
+		for _, k := range lockedList {
+			locked[k] = true
+		}
+	}
 	updates := map[string]interface{}{
-		"addr":      f.Addr,
 		"version":   f.Version,
 		"status":    1,
 		"last_seen": time.Now().Unix(),
 	}
-	if f.LanAddr != "" {
+	if f.Addr != "" && !locked["addr"] {
+		updates["addr"] = f.Addr
+	}
+	if f.LanAddr != "" && !locked["lan_addr"] {
 		updates["lan_addr"] = f.LanAddr
 	}
-	if f.Name != "" {
+	if f.Name != "" && !locked["name"] {
 		updates["name"] = f.Name
 	}
-	if f.MaxSessions > 0 {
+	if f.MaxSessions > 0 && !locked["max_sessions"] {
 		updates["max_sessions"] = f.MaxSessions
 	}
 	if node.Region == "" && f.Region != "" {
@@ -475,4 +486,41 @@ func (s *NodeService) SaveConfig(id uint, cfg string) (int64, error) {
 	var node model.ServerNode
 	DB.Where("id = ?", id).First(&node)
 	return node.UpdatedAt, nil
+}
+// MarkOverrides 记录管理员在后台接管的字段（追加合并，去重）。
+//
+// 典型场景：节点上报的 addr 是自动探测结果，管理员发现不对在后台改掉，
+// 若不记录接管，下一次注册又会被节点上报值冲掉。
+func (s *NodeService) MarkOverrides(id uint, fields []string) error {
+	if len(fields) == 0 {
+		return nil
+	}
+	var node model.ServerNode
+	if err := DB.Where("id = ?", id).First(&node).Error; err != nil {
+		return err
+	}
+	set := map[string]bool{}
+	if node.Overrides != "" {
+		list := []string{}
+		if err := json.Unmarshal([]byte(node.Overrides), &list); err == nil {
+			for _, k := range list {
+				set[k] = true
+			}
+		}
+	}
+	for _, k := range fields {
+		if k != "" {
+			set[k] = true
+		}
+	}
+	list := make([]string, 0, len(set))
+	for k := range set {
+		list = append(list, k)
+	}
+	sort.Strings(list)
+	b, err := json.Marshal(list)
+	if err != nil {
+		return err
+	}
+	return DB.Model(&model.ServerNode{}).Where("id = ?", id).Update("overrides", string(b)).Error
 }

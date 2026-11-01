@@ -56,6 +56,13 @@ type ServerNode struct {
 	// 无法热改的（key/端口/mask）只做展示，需重启生效。
 	Config string `json:"config" gorm:"type:text"`
 
+	// Overrides 平台已接管的字段名（JSON 数组，如 ["addr","name"]）。
+	//
+	// 冲突原则：**平台下发优先**。节点注册上报的 addr/lan_addr/name/
+	// max_sessions/region 若已被管理员在后台改过，就不再被节点覆盖，
+	// 否则后台改完下一轮心跳注册又会被冲回去。
+	Overrides string `json:"overrides" gorm:"type:text"`
+
 	CreatedAt int64 `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt int64 `json:"updated_at" gorm:"autoUpdateTime"`
 }

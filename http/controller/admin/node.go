@@ -91,8 +91,28 @@ func (n *Node) Update(c *gin.Context) {
 		response.Fail(c, 101, "更新失败："+err.Error())
 		return
 	}
-	global.Logger.Infof("[Node] 管理员更新节点 %s: %v", node.NodeId, updates)
-	response.Success(c, gin.H{"ok": true})
+	// 记录平台接管的字段：这些字段以后不再被节点注册上报值覆盖（平台优先）
+	lockedFields := []string{}
+	if req.Addr != nil && *req.Addr != "" {
+		lockedFields = append(lockedFields, "addr")
+	}
+	if req.LanAddr != nil && *req.LanAddr != "" {
+		lockedFields = append(lockedFields, "lan_addr")
+	}
+	if req.Name != nil && *req.Name != "" {
+		lockedFields = append(lockedFields, "name")
+	}
+	if req.MaxSessions != nil && *req.MaxSessions > 0 {
+		lockedFields = append(lockedFields, "max_sessions")
+	}
+	if req.Region != nil {
+		lockedFields = append(lockedFields, "region")
+	}
+	if err := service.AllService.NodeService.MarkOverrides(req.Id, lockedFields); err != nil {
+		global.Logger.Warnf("[Node] 记录接管字段失败 id=%d: %v", req.Id, err)
+	}
+	global.Logger.Infof("[Node] 管理员更新节点 %s: %v（接管字段 %v）", node.NodeId, updates, lockedFields)
+	response.Success(c, gin.H{"ok": true, "locked": lockedFields})
 }
 
 // Delete 删除节点
