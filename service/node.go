@@ -392,12 +392,16 @@ func (s *NodeService) Probe(n *model.ServerNode) {
 	begin := time.Now()
 	conn, err := net.DialTimeout("tcp", target, 1200*time.Millisecond)
 	if err != nil {
+		global.Logger.Warnf("[Node] 探测 %s 失败: %v (addr=%s lan=%s)", target, err, n.Addr, n.LanAddr)
 		// 探测失败只清空 RTT，**不改在线状态**——在线与否由心跳判定。
 		DB.Model(&model.ServerNode{}).Where("id = ?", n.Id).Update("rtt_ms", 0)
 		return
 	}
 	_ = conn.Close()
-	s.TouchRtt(n.Id, int(time.Since(begin).Milliseconds()))
+	_ = conn.Close()
+	ms := int(time.Since(begin).Milliseconds())
+	global.Logger.Infof("[Node] 探测 %s 成功: %dms", target, ms)
+	s.TouchRtt(n.Id, ms)
 }
 
 // StartHealthCheck 定时健康检查：探测可达性、判定离线。
