@@ -1,4 +1,4 @@
-package router
+﻿package router
 
 import (
 	"github.com/gin-gonic/gin"
@@ -367,6 +367,16 @@ func ConfigBind(rg *gin.RouterGroup) {
 	aRr := rg.Group("/retention").Use(middleware.BackendUserAuth(), middleware.AdminPrivilege())
 	aRr.GET("/info", rp.Info)
 	aRr.GET("/stats", rp.Stats)
+
+	// 集群节点管理：查看状态/负载、调整调度权重、下线、删除
+	nd := &admin.Node{}
+	aNd := rg.Group("/node").Use(middleware.BackendUserAuth(), middleware.AdminPrivilege())
+	aNd.GET("/list", nd.List)
+	aNd.POST("/update", nd.Update)
+	aNd.POST("/delete", nd.Delete)
+	aNd.GET("/score-config", nd.ScoreConfig)
+	aNd.POST("/score-config", nd.SaveScoreConfig)
+	aNd.POST("/refresh", nd.Refresh)
 	aRr.POST("/update", rp.Update)
 
 	// 重启服务：仅管理员

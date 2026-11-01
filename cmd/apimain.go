@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"fmt"
@@ -62,6 +62,8 @@ var rootCmd = &cobra.Command{
 		go service.AllService.AuditRetentionService.StartAuditRetentionSweep()
 		// 存储管理：站内消息 / 登录日志 / 操作日志按各自配置天数清理（0=不清理）
 		go service.AllService.StorageRetentionService.StartSweep()
+		// 集群节点健康检查：定期探测 hbbs/hbbr 可达性并回填 RTT，超时判定离线
+		go service.AllService.NodeService.StartHealthCheck()
 	},
 }
 
@@ -499,6 +501,7 @@ func DatabaseAutoUpdate() {
 		&model.AddressBookOpLog{},
 		&model.PunchDirectOk{},
 		&model.SystemSetting{},
+		&model.ServerNode{},
 	}
 	for _, m := range fallbackModels {
 		if err := db.AutoMigrate(m); err != nil {

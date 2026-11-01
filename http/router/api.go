@@ -1,4 +1,4 @@
-package router
+﻿package router
 
 import (
 	"github.com/gin-gonic/gin"
@@ -107,6 +107,14 @@ func ApiInit(g *gin.Engine) {
 		frg.GET("/punch/addr/inbox", middleware.ProcessMonitorAuth(), pu.Inbox)
 		// 直连合规上报：宽限期内未收到两端上报会触发强制断开
 		frg.POST("/punch/direct-ok", middleware.ProcessMonitorAuth(), pu.DirectOk)
+
+	// 集群节点：hbbs / hbbr 注册、心跳、拉取调度后的中继列表。
+	// 节点部署在公网，按"公网 + 密钥"约定，复用 ProcessMonitorAuth（校验 rustdesk key / JWT）。
+	nd := &api.Node{}
+	frg.POST("/node/register", middleware.ProcessMonitorAuth(), nd.Register)
+	frg.POST("/node/heartbeat", middleware.ProcessMonitorAuth(), nd.Heartbeat)
+	frg.GET("/node/relays", middleware.ProcessMonitorAuth(), nd.Relays)
+	frg.GET("/node/score-config", middleware.ProcessMonitorAuth(), nd.ScoreConfig)
 	}
 
 	// 订阅支付回调（公开）
