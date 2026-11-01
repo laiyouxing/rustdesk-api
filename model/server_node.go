@@ -49,6 +49,13 @@ type ServerNode struct {
 	// LastSeen 最后一次心跳时间（unix 秒）
 	LastSeen int64 `json:"last_seen" gorm:"index"`
 
+	// Config 由 api-server 下发的节点配置（JSON 文本）。
+	//
+	// 设计：节点自身只保留"启动参数"，其余可调项全部集中在这里，
+	// 节点 agent 定期拉取并热应用（中继列表 / 限速等），
+	// 无法热改的（key/端口/mask）只做展示，需重启生效。
+	Config string `json:"config" gorm:"type:text"`
+
 	CreatedAt int64 `json:"created_at" gorm:"autoCreateTime"`
 	UpdatedAt int64 `json:"updated_at" gorm:"autoUpdateTime"`
 }

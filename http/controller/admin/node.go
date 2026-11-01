@@ -210,3 +210,51 @@ func (n *Node) SaveStaticRelays(c *gin.Context) {
 	global.Logger.Infof("[Node] 静态中继已更新: %v", req.List)
 	response.Success(c, gin.H{"ok": true})
 }
+// GetConfig 读取节点当前下发的配置
+// @Tags 集群节点
+// @Summary 读取节点配置
+// @Router /admin/node/config [get]
+// @Security token
+func (n *Node) GetConfig(c *gin.Context) {
+	id := c.Query("id")
+	if id == "" {
+		response.Fail(c, 101, "id 不能为空")
+		return
+	}
+	var node model.ServerNode
+	if err := service.DB.Where("id = ?", id).First(&node).Error; err != nil {
+		response.Fail(c, 101, "节点不存在")
+		return
+	}
+	response.Success(c, gin.H{"config": node.Config, "version": node.UpdatedAt, "node_id": node.NodeId})
+}
+
+// SaveConfig 下发节点配置（JSON）
+//
+// 应用说明（后台页面会提示）：
+//   - 可热应用：relay_servers（hbbs 中继列表）、limit_speed_mbps /
+//     single_bandwidth_mbps / total_bandwidth_mbps / downgrade_threshold /
+//     downgrade_start_check_sec（hbbr 限速与降级）
+//   - 需重启：key / port / mask / must_login —— 属于启动参数，仅做展示
+// @Tags 集群节点
+// @Summary 下发节点配置
+// @Router /admin/node/config [post]
+// @Security token
+func (n *Node) SaveConfig(c *gin.Context) {
+	type Req struct {
+		Id     uint   `json:"id" binding:"required"`
+		Config string `json:"config"`
+	}
+	var req Req
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.Fail(c, 101, response.TranslateMsg(c, "ParamsError")+err.Error())
+		return
+	}
+	ver, err := service.AllService.NodeService.SaveConfig(req.Id, req.Config)
+	if err != nil {
+		response.Fail(c, 101, err.Error())
+		return
+	}
+	global.Logger.Infof("[Node] 已下发配置到节点 id=%d（版本 %d）", req.Id, ver)
+	response.Success(c, gin.H{"ok": true, "version": ver})
+}

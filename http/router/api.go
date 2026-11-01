@@ -1,4 +1,4 @@
-﻿package router
+package router
 
 import (
 	"github.com/gin-gonic/gin"
@@ -117,6 +117,7 @@ func ApiInit(g *gin.Engine) {
 	frg.GET("/node/score-config", middleware.ProcessMonitorAuth(), nd.ScoreConfig)
 	frg.GET("/node/regions", middleware.ProcessMonitorAuth(), nd.Regions)
 	frg.POST("/node/self-region", middleware.ProcessMonitorAuth(), nd.SelfRegion)
+	frg.GET("/node/config", middleware.ProcessMonitorAuth(), nd.NodeConfig)
 	}
 
 	// 订阅支付回调（公开）

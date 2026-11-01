@@ -451,3 +451,28 @@ func (s *NodeService) SetPeerRegion(peerId, region string) error {
 	}
 	return DB.Model(&model.Peer{}).Where("id = ?", peerId).Update("region", region).Error
 }
+// GetConfig 读取节点配置（JSON 文本）与其版本号（用 UpdatedAt 当版本）。
+func (s *NodeService) GetConfig(nodeId string) (string, int64, error) {
+	var node model.ServerNode
+	if err := DB.Where("node_id = ?", nodeId).First(&node).Error; err != nil {
+		return "", 0, fmt.Errorf("节点不存在：%s", nodeId)
+	}
+	return node.Config, node.UpdatedAt, nil
+}
+
+// SaveConfig 保存节点配置（管理员下发）。返回新版本号。
+func (s *NodeService) SaveConfig(id uint, cfg string) (int64, error) {
+	if cfg == "" {
+		cfg = "{}"
+	}
+	var probe map[string]interface{}
+	if err := json.Unmarshal([]byte(cfg), &probe); err != nil {
+		return 0, fmt.Errorf("配置不是合法 JSON：%v", err)
+	}
+	if err := DB.Model(&model.ServerNode{}).Where("id = ?", id).Update("config", cfg).Error; err != nil {
+		return 0, err
+	}
+	var node model.ServerNode
+	DB.Where("id = ?", id).First(&node)
+	return node.UpdatedAt, nil
+}

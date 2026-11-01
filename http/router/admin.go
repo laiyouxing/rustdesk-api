@@ -383,6 +383,8 @@ func ConfigBind(rg *gin.RouterGroup) {
 	aNd.POST("/score-config", nd.SaveScoreConfig)
 	aNd.POST("/refresh", nd.Refresh)
 	aNd.GET("/regions", (&admin.Region{}).List)
+	aNd.GET("/config", nd.GetConfig)
+	aNd.POST("/config", nd.SaveConfig)
 	aNd.GET("/static-relays", nd.StaticRelays)
 	aNd.POST("/static-relays", nd.SaveStaticRelays)
 	aRr.POST("/update", rp.Update)

@@ -1,4 +1,4 @@
-﻿package api
+package api
 
 import (
 	"strconv"
@@ -127,4 +127,24 @@ func (n *Node) SelfRegion(c *gin.Context) {
 	}
 	stored := service.AllService.NodeService.PeerRegion(req.PeerId)
 	response.Success(c, gin.H{"region": stored, "source": map[bool]string{true: "client", false: "server"}[req.Region != ""]})
+}
+// NodeConfig 节点拉取 api-server 下发的配置。
+//
+// 节点定期调用，按返回的 config 热应用能改的项（中继列表、限速等）；
+// 无法热改的启动参数（key/端口/mask）由后台仅做展示。
+// @Tags 集群节点
+// @Summary 拉取节点配置
+// @Router /node/config [get]
+func (n *Node) NodeConfig(c *gin.Context) {
+	nodeId := c.Query("node_id")
+	if nodeId == "" {
+		response.Fail(c, 101, "node_id 不能为空")
+		return
+	}
+	cfg, version, err := service.AllService.NodeService.GetConfig(nodeId)
+	if err != nil {
+		response.Fail(c, 101, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"config": cfg, "version": version})
 }
