@@ -378,7 +378,14 @@ func (s *NodeService) SaveStaticRelays(list []string) error {
 	return AllService.SettingService.Set(SettingKeyNodeStaticRelays, strings.Join(list, ","))
 }
 func (s *NodeService) TouchRtt(id uint, rttMs int) {
-	DB.Model(&model.ServerNode{}).Where("id = ?", id).Update("rtt_ms", rttMs)
+	res := DB.Model(&model.ServerNode{}).Where("id = ?", id).Update("rtt_ms", rttMs)
+	// 诊断：id 为 0 或影响行数为 0 时 rtt 永远写不进去，必须显式暴露出来，
+	// 否则只看到"探测成功"却查不到数据，极难定位。
+	if res.Error != nil {
+		global.Logger.Warnf("[Node] 写入 rtt 失败 id=%d rtt=%d: %v", id, rttMs, res.Error)
+	} else if res.RowsAffected == 0 {
+		global.Logger.Warnf("[Node] 写入 rtt 未命中 id=%d rtt=%d（可能 Id 为空）", id, rttMs)
+	}
 }
 
 // Probe 探测节点 TCP 可达性并回填 RTT。
