@@ -211,9 +211,20 @@ func (s *NodeService) List(kind string) []model.ServerNode {
 	offline := s.OfflineSec()
 	now := time.Now().Unix()
 	for i := range nodes {
+		// 在线与否**只由心跳新鲜度决定**。探测失败不能判离线：
+		// 节点与 api-server 同机时，探测公网地址会因缺少 NAT 回环而失败，
+		// 之前因此把正常心跳的节点误标成离线。
 		if nodes[i].LastSeen == 0 || now-nodes[i].LastSeen > offline {
 			nodes[i].Status = 0
+		} else {
+			nodes[i].Status = 1
 		}
+	}
+	// 列表里实时算一次分数（不落库），保证后台总能显示，
+	// 不必等到下一次 Relays() 才写回；成本为 0 也是合法值。
+	w := s.Weights()
+	for i := range nodes {
+		nodes[i].Score = s.Score(&nodes[i], w)
 	}
 	return nodes
 }
@@ -372,13 +383,17 @@ func (s *NodeService) TouchRtt(id uint, rttMs int) {
 
 // Probe 探测节点 TCP 可达性并回填 RTT。
 func (s *NodeService) Probe(n *model.ServerNode) {
+	// 优先探测内网地址：api-server 与节点同机/同内网时，公网地址往往没有
+	// NAT 回环（本机连自己的公网 IP 会 Connection refused），探测必然失败。
+	target := n.Addr
+	if n.LanAddr != "" {
+		target = n.LanAddr
+	}
 	begin := time.Now()
-	conn, err := net.DialTimeout("tcp", n.Addr, 1200*time.Millisecond)
+	conn, err := net.DialTimeout("tcp", target, 1200*time.Millisecond)
 	if err != nil {
-		DB.Model(&model.ServerNode{}).Where("id = ?", n.Id).Updates(map[string]interface{}{
-			"rtt_ms": 0,
-			"status": 0,
-		})
+		// 探测失败只清空 RTT，**不改在线状态**——在线与否由心跳判定。
+		DB.Model(&model.ServerNode{}).Where("id = ?", n.Id).Update("rtt_ms", 0)
 		return
 	}
 	_ = conn.Close()
