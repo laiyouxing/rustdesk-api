@@ -1,4 +1,4 @@
-﻿package main
+package main
 
 import (
 	"fmt"
@@ -51,7 +51,11 @@ var rootCmd = &cobra.Command{
 	},
 	Run: func(cmd *cobra.Command, args []string) {
 		global.Logger.Info("API SERVER START")
-		http.ApiInit()
+		// ⚠️ 所有后台 goroutine 必须在 http.ApiInit() **之前** 启动。
+		// ApiInit 内部会调用 Run() 阻塞在 ListenAndServe 上，写在它后面的
+		// 语句永远不会执行——此前健康检查/审计清理/日志清理/存储保留策略
+		// 全部因此没有跑起来（表现为"配置了保留天数但不生效"、
+		// "节点 RTT 一直为 0"）。
 		// 后台定时清理孤儿连接审计记录
 		go service.AllService.AuditService.StartStaleConnCloseSweep()
 		// 基于心跳 conns 的快速连接心跳检测（60s 超时），检测异常断开
@@ -64,6 +68,8 @@ var rootCmd = &cobra.Command{
 		go service.AllService.StorageRetentionService.StartSweep()
 		// 集群节点健康检查：定期探测 hbbs/hbbr 可达性并回填 RTT，超时判定离线
 		go service.AllService.NodeService.StartHealthCheck()
+		// 阻塞式启动 HTTP 服务（放最后）
+		http.ApiInit()
 	},
 }
 
