@@ -1,4 +1,4 @@
-﻿package admin
+package admin
 
 import (
 	"github.com/gin-gonic/gin"
@@ -38,6 +38,7 @@ func (n *Node) Update(c *gin.Context) {
 	type Req struct {
 		Id          uint    `json:"id" binding:"required"`
 		Name        *string `json:"name"`
+		Addr        *string `json:"addr"`
 		Region      *string `json:"region"`
 		LanAddr     *string `json:"lan_addr"`
 		Weight      *int    `json:"weight"`
@@ -57,6 +58,10 @@ func (n *Node) Update(c *gin.Context) {
 	updates := map[string]interface{}{}
 	if req.Name != nil {
 		updates["name"] = *req.Name
+	}
+	if req.Addr != nil && *req.Addr != "" {
+		// 允许后台修正节点对外地址（例如运营商标识变化、公网 IP 写错）
+		updates["addr"] = *req.Addr
 	}
 	if req.Region != nil {
 		updates["region"] = *req.Region
