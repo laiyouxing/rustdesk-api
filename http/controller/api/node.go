@@ -170,3 +170,20 @@ func (n *Node) Secret(c *gin.Context) {
 		"using_prev": c.GetBool("node_secret_using_prev"),
 	})
 }
+
+// RelayLanMap 中继「公网地址 → 候选内网地址」映射（供客户端做内网中继优化）。
+//
+// 场景：控制端 A 与中继同内网、被控端 B 在公网。A 本机改连中继的内网地址可以
+// 省掉绕公网的一跳，但**通告给 B 的必须是公网地址**（hbbs 会把中继地址原样转发，
+// B 在公网连不上私有地址）。hbbr 按 uuid 配对、不看接入地址，所以两端连同一台
+// hbbr 的不同地址依然能配对成功。
+//
+// 因此内网地址不能混进中继列表下发，而是作为映射返回：客户端选中公网中继后，
+// 在本机按映射尝试内网地址，只有实测可达且更快才切换。
+//
+// @Tags 集群节点
+// @Summary 中继内网地址映射
+// @Router /node/relay-lan-map [get]
+func (n *Node) RelayLanMap(c *gin.Context) {
+	response.Success(c, gin.H{"map": service.AllService.NodeService.RelayLanMap()})
+}

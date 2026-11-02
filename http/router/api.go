@@ -108,21 +108,22 @@ func ApiInit(g *gin.Engine) {
 		// 直连合规上报：宽限期内未收到两端上报会触发强制断开
 		frg.POST("/punch/direct-ok", middleware.ProcessMonitorAuth(), pu.DirectOk)
 
-	// 集群节点：hbbs / hbbr 注册、心跳、拉取调度后的中继列表。
-	// 节点部署在公网，按"公网 + 节点专用密钥"约定：
-	//   - ProcessMonitorAuth 确认这是已知设备/已登录用户；
-	//   - NodeSecretAuth 再校验 X-Node-Secret（未配置 node.secret 时放行并告警）。
-	// 只靠 ProcessMonitorAuth 不够：它接受的 rustdesk key 是公开信息。
-	nd := &api.Node{}
-	frg.POST("/node/register", middleware.ProcessMonitorAuth(), middleware.NodeSecretAuth(), nd.Register)
-	frg.POST("/node/heartbeat", middleware.ProcessMonitorAuth(), middleware.NodeSecretAuth(), nd.Heartbeat)
-	frg.GET("/node/relays", middleware.ProcessMonitorAuth(), nd.Relays)
-	frg.GET("/node/score-config", middleware.ProcessMonitorAuth(), nd.ScoreConfig)
-	frg.GET("/node/regions", middleware.ProcessMonitorAuth(), nd.Regions)
-	frg.POST("/node/self-region", middleware.ProcessMonitorAuth(), nd.SelfRegion)
-	frg.GET("/node/config", middleware.ProcessMonitorAuth(), middleware.NodeSecretAuth(), nd.NodeConfig)
-	// 密钥轮换后节点通过这里拉新密钥（旧密钥在宽限期内也能取，避免轮换即掉线）
-	frg.GET("/node/secret", middleware.ProcessMonitorAuth(), middleware.NodeSecretAuth(), nd.Secret)
+		// 集群节点：hbbs / hbbr 注册、心跳、拉取调度后的中继列表。
+		// 节点部署在公网，按"公网 + 节点专用密钥"约定：
+		//   - ProcessMonitorAuth 确认这是已知设备/已登录用户；
+		//   - NodeSecretAuth 再校验 X-Node-Secret（未配置 node.secret 时放行并告警）。
+		// 只靠 ProcessMonitorAuth 不够：它接受的 rustdesk key 是公开信息。
+		nd := &api.Node{}
+		frg.POST("/node/register", middleware.ProcessMonitorAuth(), middleware.NodeSecretAuth(), nd.Register)
+		frg.POST("/node/heartbeat", middleware.ProcessMonitorAuth(), middleware.NodeSecretAuth(), nd.Heartbeat)
+		frg.GET("/node/relays", middleware.ProcessMonitorAuth(), nd.Relays)
+		frg.GET("/node/score-config", middleware.ProcessMonitorAuth(), nd.ScoreConfig)
+		frg.GET("/node/relay-lan-map", middleware.ProcessMonitorAuth(), nd.RelayLanMap)
+		frg.GET("/node/regions", middleware.ProcessMonitorAuth(), nd.Regions)
+		frg.POST("/node/self-region", middleware.ProcessMonitorAuth(), nd.SelfRegion)
+		frg.GET("/node/config", middleware.ProcessMonitorAuth(), middleware.NodeSecretAuth(), nd.NodeConfig)
+		// 密钥轮换后节点通过这里拉新密钥（旧密钥在宽限期内也能取，避免轮换即掉线）
+		frg.GET("/node/secret", middleware.ProcessMonitorAuth(), middleware.NodeSecretAuth(), nd.Secret)
 	}
 
 	// 订阅支付回调（公开）

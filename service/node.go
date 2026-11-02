@@ -407,6 +407,33 @@ func (s *NodeService) List(kind string) []model.ServerNode {
 	return nodes
 }
 
+// RelayLanMap 返回「公网中继地址 → 候选内网地址列表」映射。
+//
+// 只统计已注册的 hbbr 节点（hbbs 不是中继）。客户端拿到映射后，选中某台公网中继时
+// 可以再试它对应的内网地址：可达且明显更快就走内网，通告给对端的仍是公网地址。
+func (s *NodeService) RelayLanMap() map[string][]string {
+	var nodes []model.ServerNode
+	if err := DB.Where("kind = ? AND disabled = 0", "hbbr").Find(&nodes).Error; err != nil {
+		return map[string][]string{}
+	}
+	out := make(map[string][]string, len(nodes))
+	for _, n := range nodes {
+		addr := strings.TrimSpace(n.Addr)
+		if addr == "" {
+			continue
+		}
+		lans := splitLanAddrs(n.LanAddrs)
+		if len(lans) == 0 && strings.TrimSpace(n.LanAddr) != "" {
+			lans = []string{strings.TrimSpace(n.LanAddr)}
+		}
+		if len(lans) == 0 {
+			continue
+		}
+		out[addr] = lans
+	}
+	return out
+}
+
 // normalize 把 value/max 归一化到 0~1（max<=0 时按固定参考值）。
 func normalize(value, max float64) float64 {
 	if max <= 0 {
@@ -511,6 +538,11 @@ func (s *NodeService) Relays(region string, limit int) []map[string]interface{} 
 		}
 		if it.node.LanAddr != "" {
 			item["lan_addr"] = it.node.LanAddr
+		}
+		// 候选内网地址数组：hbbs 会把它们摊平成额外的中继候选下发给客户端，
+		// 同内网的客户端实测更快就会走内网地址（hbbr 按 uuid 配对，不看接入地址）。
+		if la := splitLanAddrs(it.node.LanAddrs); len(la) > 0 {
+			item["lan_addrs"] = la
 		}
 		out = append(out, item)
 	}
