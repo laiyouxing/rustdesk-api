@@ -49,14 +49,15 @@ func (n *Node) List(c *gin.Context) {
 // @Security token
 func (n *Node) Update(c *gin.Context) {
 	type Req struct {
-		Id          uint    `json:"id" binding:"required"`
-		Name        *string `json:"name"`
-		Addr        *string `json:"addr"`
-		Region      *string `json:"region"`
-		LanAddr     *string `json:"lan_addr"`
-		Weight      *int    `json:"weight"`
-		MaxSessions *int    `json:"max_sessions"`
-		Disabled    *int    `json:"disabled"`
+		Id          uint      `json:"id" binding:"required"`
+		Name        *string   `json:"name"`
+		Addr        *string   `json:"addr"`
+		Region      *string   `json:"region"`
+		LanAddr     *string   `json:"lan_addr"`
+		LanAddrs    *[]string `json:"lan_addrs"` // 多网卡：可一次提交多个候选地址
+		Weight      *int      `json:"weight"`
+		MaxSessions *int      `json:"max_sessions"`
+		Disabled    *int      `json:"disabled"`
 	}
 	var req Req
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -119,6 +120,31 @@ func (n *Node) Update(c *gin.Context) {
 		if lan != node.LanAddr {
 			updates["lan_addr"] = lan
 			if lan == "" {
+				unlockedFields = append(unlockedFields, "lan_addr")
+			} else {
+				lockedFields = append(lockedFields, "lan_addr")
+			}
+		}
+	}
+	// 候选内网地址列表（多网卡）：一次提交多个，服务端逐个探测、取延迟最低的算 RTT。
+	// 传空数组 = 清空并交还给节点自动上报（同时解除接管）。
+	if req.LanAddrs != nil {
+		list := service.NormalizeLanAddrs(*req.LanAddrs)
+		for _, a := range list {
+			if !service.ValidHostPort(a) {
+				response.Fail(c, 101, "内网地址格式不正确，应为 host:port（如 10.126.126.5:21117）")
+				return
+			}
+		}
+		csv := strings.Join(list, ",")
+		first := ""
+		if len(list) > 0 {
+			first = list[0]
+		}
+		if csv != node.LanAddrs || first != node.LanAddr {
+			updates["lan_addrs"] = csv
+			updates["lan_addr"] = first
+			if len(list) == 0 {
 				unlockedFields = append(unlockedFields, "lan_addr")
 			} else {
 				lockedFields = append(lockedFields, "lan_addr")

@@ -18,8 +18,14 @@ type ServerNode struct {
 	Name string `json:"name" gorm:"size:100"`
 	// Addr 对外地址（公网）host:port
 	Addr string `json:"addr" gorm:"size:200;not null"`
-	// LanAddr 内网地址（可选），供同内网客户端直连，避免绕公网
+	// LanAddr 内网地址（可选），供同内网客户端直连，避免绕公网。
+	// 多网卡时取 LanAddrs 的第一个。
 	LanAddr string `json:"lan_addr" gorm:"size:200"`
+	// LanAddrs 节点自动上报的全部候选内网地址（逗号分隔，最多 8 个）。
+	//
+	// 一台机器常有业务网 / VPN / Docker 网桥多张网卡，api-server 探测时逐个尝试、
+	// 取延迟最低的那个写 rtt_ms，所以要把候选全存下来，而不是只留一个。
+	LanAddrs string `json:"lan_addrs" gorm:"size:512"`
 	// Region 地域标识（省级 code，如 GD/GX），用于就近调度
 	Region string `json:"region" gorm:"size:64;index"`
 	// Version 节点上报的版本号
@@ -50,6 +56,9 @@ type ServerNode struct {
 
 	// Score 最近一次计算的负载评分（越小越优先），便于前端直接展示
 	Score float64 `json:"score"`
+	// LanAddrsList 候选内网地址数组，**仅用于 JSON 输出**（列表接口填充），
+	// 库里存的是逗号分隔串 LanAddrs，前端要按数组渲染。
+	LanAddrsList []string `json:"lan_addrs_list" gorm:"-"`
 	// LastSeen 最后一次心跳时间（unix 秒）
 	LastSeen int64 `json:"last_seen" gorm:"index"`
 

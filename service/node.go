@@ -88,28 +88,80 @@ type NodeService struct {
 
 // NodeRegisterForm 节点注册参数
 type NodeRegisterForm struct {
-	NodeId      string `json:"node_id"`
-	Kind        string `json:"kind"`
-	Name        string `json:"name"`
-	Addr        string `json:"addr"`
-	LanAddr     string `json:"lan_addr"`
-	Region      string `json:"region"`
-	Version     string `json:"version"`
-	MaxSessions int    `json:"max_sessions"`
-	Weight      int    `json:"weight"`
+	NodeId      string   `json:"node_id"`
+	Kind        string   `json:"kind"`
+	Name        string   `json:"name"`
+	Addr        string   `json:"addr"`
+	LanAddr     string   `json:"lan_addr"`
+	LanAddrs    []string `json:"lan_addrs"`
+	Region      string   `json:"region"`
+	Version     string   `json:"version"`
+	MaxSessions int      `json:"max_sessions"`
+	Weight      int      `json:"weight"`
 }
 
 // NodeHeartbeatForm 节点心跳参数
 type NodeHeartbeatForm struct {
-	NodeId    string `json:"node_id"`
-	Peers     int64  `json:"peers"`
-	Sessions  int64  `json:"sessions"`
-	BwIn      int64  `json:"bw_in"`
-	BwOut     int64  `json:"bw_out"`
-	CpuPct    int    `json:"cpu_pct"`
-	MemPct    int    `json:"mem_pct"`
-	UptimeSec int64  `json:"uptime_sec"`
-	Version   string `json:"version"`
+	NodeId    string   `json:"node_id"`
+	Peers     int64    `json:"peers"`
+	Sessions  int64    `json:"sessions"`
+	BwIn      int64    `json:"bw_in"`
+	BwOut     int64    `json:"bw_out"`
+	CpuPct    int      `json:"cpu_pct"`
+	MemPct    int      `json:"mem_pct"`
+	UptimeSec int64    `json:"uptime_sec"`
+	Version   string   `json:"version"`
+	LanAddrs  []string `json:"lan_addrs"`
+}
+
+// maxLanAddrs 候选内网地址上限：多网卡也就几张，超过说明数据有问题。
+const maxLanAddrs = 8
+
+// normalizeLanAddrs 清洗节点上报的候选内网地址。
+//
+// 保留私网地址（这正是要的），只丢掉明显无效的值：空串、回环、未指定地址。
+// 去重并保序（第一个作为兜底的内网地址），最多留 maxLanAddrs 个。
+func normalizeLanAddrs(list []string) []string {
+	out := make([]string, 0, len(list))
+	seen := make(map[string]bool, len(list))
+	for _, a := range list {
+		a = strings.TrimSpace(a)
+		if a == "" || seen[a] {
+			continue
+		}
+		host := a
+		if h, _, err := net.SplitHostPort(a); err == nil {
+			host = h
+		}
+		if ip := net.ParseIP(host); ip != nil && (ip.IsLoopback() || ip.IsUnspecified()) {
+			continue
+		}
+		seen[a] = true
+		out = append(out, a)
+		if len(out) >= maxLanAddrs {
+			break
+		}
+	}
+	return out
+}
+
+// NormalizeLanAddrs 候选内网地址清洗的导出包装（后台编辑接口复用）。
+func NormalizeLanAddrs(list []string) []string { return normalizeLanAddrs(list) }
+
+// splitLanAddrs 把库里的逗号分隔串还原成数组（给探测/后台展示用）。
+func splitLanAddrs(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // parseOverrideList 解析 Overrides 字段（JSON 字符串数组）。
@@ -150,6 +202,12 @@ func (s *NodeService) Register(f *NodeRegisterForm) (*model.ServerNode, error) {
 	f.NodeId = strings.TrimSpace(f.NodeId)
 	f.Addr = strings.TrimSpace(f.Addr)
 	f.LanAddr = strings.TrimSpace(f.LanAddr)
+	// 候选内网地址：去重/过滤无效值；有列表时让旧的单值字段与第一个保持一致，
+	// 避免"lan_addr 与 lan_addrs[0] 不一致"导致探测和展示各说各话。
+	f.LanAddrs = normalizeLanAddrs(f.LanAddrs)
+	if len(f.LanAddrs) > 0 {
+		f.LanAddr = f.LanAddrs[0]
+	}
 	if f.NodeId == "" || f.Addr == "" || f.Kind == "" {
 		return nil, fmt.Errorf("node_id/kind/addr 不能为空")
 	}
@@ -185,6 +243,7 @@ func (s *NodeService) Register(f *NodeRegisterForm) (*model.ServerNode, error) {
 			Name:        f.Name,
 			Addr:        f.Addr,
 			LanAddr:     f.LanAddr,
+			LanAddrs:    strings.Join(f.LanAddrs, ","),
 			Region:      f.Region,
 			Version:     f.Version,
 			Weight:      f.Weight,
@@ -219,6 +278,10 @@ func (s *NodeService) Register(f *NodeRegisterForm) (*model.ServerNode, error) {
 	}
 	if f.LanAddr != "" && !locked["lan_addr"] {
 		updates["lan_addr"] = f.LanAddr
+	}
+	// 候选列表整体覆盖：网卡增减时节点每轮上报的都是全量。
+	if len(f.LanAddrs) > 0 && !locked["lan_addr"] {
+		updates["lan_addrs"] = strings.Join(f.LanAddrs, ",")
 	}
 	if f.Name != "" && !locked["name"] {
 		updates["name"] = f.Name
@@ -270,6 +333,16 @@ func (s *NodeService) Heartbeat(f *NodeHeartbeatForm) error {
 	}
 	if f.Version != "" {
 		updates["version"] = f.Version
+	}
+	// 网卡增减（插拔网线、VPN 断开）时靠心跳刷新候选列表；平台接管 lan_addr 时不覆盖。
+	if la := normalizeLanAddrs(f.LanAddrs); len(la) > 0 {
+		var node model.ServerNode
+		if err := DB.Select("id", "overrides").Where("node_id = ?", f.NodeId).First(&node).Error; err == nil {
+			if !overrideSet(parseOverrideList(node.Overrides))["lan_addr"] {
+				updates["lan_addrs"] = strings.Join(la, ",")
+				updates["lan_addr"] = la[0]
+			}
+		}
 	}
 	return DB.Model(&model.ServerNode{}).Where("node_id = ?", f.NodeId).Updates(updates).Error
 }
@@ -328,6 +401,8 @@ func (s *NodeService) List(kind string) []model.ServerNode {
 	w := s.Weights()
 	for i := range nodes {
 		nodes[i].Score = s.Score(&nodes[i], w)
+		// 候选内网地址：库里存逗号分隔串，这里转成数组给前端渲染（多网卡逐个展示）
+		nodes[i].LanAddrsList = splitLanAddrs(nodes[i].LanAddrs)
 	}
 	return nodes
 }
@@ -613,42 +688,62 @@ func (s *NodeService) TouchRtt(id uint, rttMs int) {
 	}
 }
 
+// probeTimeout 单个候选地址的探测超时。
+//
+// 候选可能有好几个（多网卡），太长的超时会让一轮健康检查拖过 30 秒的 tick 间隔。
+const probeTimeout = 800 * time.Millisecond
+
 // Probe 探测节点 TCP 可达性并回填 RTT。
+//
+// 节点会自动上报**全部**候选内网地址（多网卡：业务网 / VPN / Docker 网桥），
+// 这里逐个探测、取延迟最低的那个写 rtt_ms —— 由 api-server 侧做选择，
+// 而不是让节点猜哪个地址是对的：
+//
+//   - 容器里上报的可能是容器内网 IP，api-server 探不到 → 跳过，继续试别的
+//   - 同机部署时公网地址没有 NAT 回环 → 探不到，内网地址会命中
+//   - 全部候选都不通才记 -1（未知，评分按最大成本），不能记 0
 func (s *NodeService) Probe(n *model.ServerNode) {
-	// 探测顺序：内网地址优先，探不通再退回公网地址。
-	//
-	// 为什么两条都要试：内网地址现在由节点**自动上报**（本机到 api-server 方向的
-	// 出口网卡地址），容器化部署时上报的可能是容器内网 IP，api-server 探不到；
-	// 同机部署时反过来，公网地址没有 NAT 回环也探不到。两条都失败才记 -1。
-	lan := strings.TrimSpace(n.LanAddr)
-	addr := strings.TrimSpace(n.Addr)
-	targets := make([]string, 0, 2)
-	if lan != "" {
-		targets = append(targets, lan)
+	candidates := make([]string, 0, maxLanAddrs+1)
+	seen := make(map[string]bool, maxLanAddrs+1)
+	add := func(a string) {
+		a = strings.TrimSpace(a)
+		if a == "" || seen[a] {
+			return
+		}
+		seen[a] = true
+		candidates = append(candidates, a)
 	}
-	if addr != "" && addr != lan {
-		targets = append(targets, addr)
+	for _, a := range splitLanAddrs(n.LanAddrs) {
+		add(a)
 	}
-	if len(targets) == 0 {
+	add(n.LanAddr) // 兼容只上报单值的旧节点
+	add(n.Addr)    // 最后兜底公网地址
+	if len(candidates) == 0 {
 		DB.Model(&model.ServerNode{}).Where("id = ?", n.Id).Update("rtt_ms", -1)
 		return
 	}
-	for _, target := range targets {
+	bestMs, bestAddr, okCount := -1, "", 0
+	for _, target := range candidates {
 		begin := time.Now()
-		conn, err := net.DialTimeout("tcp", target, 1200*time.Millisecond)
+		conn, err := net.DialTimeout("tcp", target, probeTimeout)
 		if err != nil {
-			global.Logger.Warnf("[Node] 探测 %s 失败: %v (addr=%s lan=%s)", target, err, addr, lan)
+			global.Logger.Debugf("[Node] 探测 %s 失败: %v (node=%s)", target, err, n.NodeId)
 			continue
 		}
 		_ = conn.Close()
 		ms := int(time.Since(begin).Milliseconds())
-		global.Logger.Infof("[Node] 探测 %s 成功: %dms", target, ms)
-		s.TouchRtt(n.Id, ms)
+		okCount++
+		if bestMs < 0 || ms < bestMs {
+			bestMs, bestAddr = ms, target
+		}
+	}
+	if bestMs < 0 {
+		global.Logger.Warnf("[Node] 探测 %s 全部候选失败（共 %d 个），rtt 记为未知", n.NodeId, len(candidates))
+		DB.Model(&model.ServerNode{}).Where("id = ?", n.Id).Update("rtt_ms", -1)
 		return
 	}
-	// 全部失败写 -1（未知），**不改在线状态**——在线与否由心跳判定。
-	// 不能写 0：0 是合法的"同机 0ms"，会让评分把探测不到节点排到最前。
-	DB.Model(&model.ServerNode{}).Where("id = ?", n.Id).Update("rtt_ms", -1)
+	global.Logger.Infof("[Node] 探测选中 %s %dms（候选 %d 个，可达 %d 个）", bestAddr, bestMs, len(candidates), okCount)
+	s.TouchRtt(n.Id, bestMs)
 }
 
 // StartHealthCheck 定时健康检查：探测可达性并回填 RTT（在线状态由心跳判定）。
