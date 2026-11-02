@@ -615,25 +615,40 @@ func (s *NodeService) TouchRtt(id uint, rttMs int) {
 
 // Probe 探测节点 TCP 可达性并回填 RTT。
 func (s *NodeService) Probe(n *model.ServerNode) {
-	// 优先探测内网地址：api-server 与节点同机/同内网时，公网地址往往没有
-	// NAT 回环（本机连自己的公网 IP 会 Connection refused），探测必然失败。
-	target := n.Addr
-	if n.LanAddr != "" {
-		target = n.LanAddr
+	// 探测顺序：内网地址优先，探不通再退回公网地址。
+	//
+	// 为什么两条都要试：内网地址现在由节点**自动上报**（本机到 api-server 方向的
+	// 出口网卡地址），容器化部署时上报的可能是容器内网 IP，api-server 探不到；
+	// 同机部署时反过来，公网地址没有 NAT 回环也探不到。两条都失败才记 -1。
+	lan := strings.TrimSpace(n.LanAddr)
+	addr := strings.TrimSpace(n.Addr)
+	targets := make([]string, 0, 2)
+	if lan != "" {
+		targets = append(targets, lan)
 	}
-	begin := time.Now()
-	conn, err := net.DialTimeout("tcp", target, 1200*time.Millisecond)
-	if err != nil {
-		global.Logger.Warnf("[Node] 探测 %s 失败: %v (addr=%s lan=%s)", target, err, n.Addr, n.LanAddr)
-		// 探测失败写 -1（未知），**不改在线状态**——在线与否由心跳判定。
-		// 不能写 0：0 是合法的"同机 0ms"，会让评分把探测不到节点排到最前。
+	if addr != "" && addr != lan {
+		targets = append(targets, addr)
+	}
+	if len(targets) == 0 {
 		DB.Model(&model.ServerNode{}).Where("id = ?", n.Id).Update("rtt_ms", -1)
 		return
 	}
-	_ = conn.Close()
-	ms := int(time.Since(begin).Milliseconds())
-	global.Logger.Infof("[Node] 探测 %s 成功: %dms", target, ms)
-	s.TouchRtt(n.Id, ms)
+	for _, target := range targets {
+		begin := time.Now()
+		conn, err := net.DialTimeout("tcp", target, 1200*time.Millisecond)
+		if err != nil {
+			global.Logger.Warnf("[Node] 探测 %s 失败: %v (addr=%s lan=%s)", target, err, addr, lan)
+			continue
+		}
+		_ = conn.Close()
+		ms := int(time.Since(begin).Milliseconds())
+		global.Logger.Infof("[Node] 探测 %s 成功: %dms", target, ms)
+		s.TouchRtt(n.Id, ms)
+		return
+	}
+	// 全部失败写 -1（未知），**不改在线状态**——在线与否由心跳判定。
+	// 不能写 0：0 是合法的"同机 0ms"，会让评分把探测不到节点排到最前。
+	DB.Model(&model.ServerNode{}).Where("id = ?", n.Id).Update("rtt_ms", -1)
 }
 
 // StartHealthCheck 定时健康检查：探测可达性并回填 RTT（在线状态由心跳判定）。
