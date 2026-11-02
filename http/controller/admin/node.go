@@ -111,40 +111,68 @@ func (n *Node) Update(c *gin.Context) {
 			}
 		}
 	}
-	if req.LanAddr != nil {
-		lan := strings.TrimSpace(*req.LanAddr)
-		if lan != "" && !service.ValidHostPort(lan) {
-			response.Fail(c, 101, "内网地址格式不正确，应为 host:port（如 10.126.126.5:21117）")
-			return
-		}
-		if lan != node.LanAddr {
-			updates["lan_addr"] = lan
-			if lan == "" {
-				unlockedFields = append(unlockedFields, "lan_addr")
-			} else {
-				lockedFields = append(lockedFields, "lan_addr")
-			}
-		}
-	}
-	// 候选内网地址列表（多网卡）：一次提交多个，服务端逐个探测、取延迟最低的算 RTT。
-	// 传空数组 = 清空并交还给节点自动上报（同时解除接管）。
+	// ===== 内网地址：lan_addrs 是唯一权威字段 =====
+	//
+	// 两个字段并存是历史包袱（先有单值 lan_addr，后来才加多候选 lan_addrs）。
+	// 同时按两套规则写会让 lan_addr / lan_addrs 打架，接管状态也会自相矛盾
+	// （同一字段同时进 lockedFields 和 unlockedFields = 谁也没锁住）。
+	// 所以这里**先归一成一条写入路径**，接管与否只在下面一处决定一次：
+	//   - 同时提交 lan_addr 与 lan_addrs 但不一致 → 参数错误（请只提交 lan_addrs）
+	//   - 只提交 lan_addr（旧调用）→ 同步写 lan_addrs = 该值（空则两边都空）
+	//   - 只提交 lan_addrs → 写 lan_addrs，并把 lan_addr 设为 list[0]
+	var (
+		lanList      []string
+		lanSubmitted bool
+	)
 	if req.LanAddrs != nil {
-		list := service.NormalizeLanAddrs(*req.LanAddrs)
-		for _, a := range list {
-			if !service.ValidHostPort(a) {
-				response.Fail(c, 101, "内网地址格式不正确，应为 host:port（如 10.126.126.5:21117）")
+		raw := *req.LanAddrs
+		// 先校验原始输入：管理员填错要明确报错，不能像节点上报那样静默丢弃
+		for _, a := range raw {
+			a = strings.TrimSpace(a)
+			if a == "" {
+				continue
+			}
+			if !service.IsPrivateLanAddr(a) {
+				response.Fail(c, 101, "内网地址必须是私网 host:port（如 10.126.126.5:21117；私网段 10/8、172.16/12、192.168/16、100.64/10）")
 				return
 			}
 		}
-		csv := strings.Join(list, ",")
+		lanList = service.NormalizeLanAddrs(raw)
+		lanSubmitted = true
+		if req.LanAddr != nil {
+			first := ""
+			if len(lanList) > 0 {
+				first = lanList[0]
+			}
+			if strings.TrimSpace(*req.LanAddr) != first {
+				response.Fail(c, 101, "lan_addr 与 lan_addrs 不一致，请只提交 lan_addrs（lan_addrs 为权威字段）")
+				return
+			}
+		}
+	} else if req.LanAddr != nil {
+		// 兼容旧调用：只有单值时把它同时写进 lan_addrs，保证两个字段永远一致
+		single := strings.TrimSpace(*req.LanAddr)
+		if single != "" && !service.IsPrivateLanAddr(single) {
+			response.Fail(c, 101, "内网地址必须是私网 host:port（如 10.126.126.5:21117；私网段 10/8、172.16/12、192.168/16、100.64/10）")
+			return
+		}
+		if single != "" {
+			lanList = []string{single}
+		}
+		lanSubmitted = true
+	}
+	if lanSubmitted {
+		csv := strings.Join(lanList, ",")
 		first := ""
-		if len(list) > 0 {
-			first = list[0]
+		if len(lanList) > 0 {
+			first = lanList[0]
 		}
 		if csv != node.LanAddrs || first != node.LanAddr {
 			updates["lan_addrs"] = csv
 			updates["lan_addr"] = first
-			if len(list) == 0 {
+			// 清空 = 交还给节点自动上报（解除接管）；有值 = 平台接管。
+			// 只在最终生效的这一条路径里登记一次。
+			if len(lanList) == 0 {
 				unlockedFields = append(unlockedFields, "lan_addr")
 			} else {
 				lockedFields = append(lockedFields, "lan_addr")
@@ -305,9 +333,10 @@ func (n *Node) SaveScoreConfig(c *gin.Context) {
 // @Security token
 func (n *Node) Refresh(c *gin.Context) {
 	nodes := service.AllService.NodeService.List("")
-	for i := range nodes {
-		service.AllService.NodeService.Probe(&nodes[i])
-	}
+	// 只**触发**探测，不同步等待：一轮探测最坏要几秒（节点按 4 个一组排队，
+	// 单个候选 800ms 超时），同步等会让后台按钮卡住、甚至触发反代/客户端超时。
+	// 结果由与定时健康检查同一套 ProbeAll 写库，前端稍后刷新列表即可看到。
+	go service.AllService.NodeService.ProbeAll(nodes)
 	response.Success(c, gin.H{"ok": true, "count": len(nodes)})
 }
 

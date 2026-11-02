@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lejianwen/rustdesk-api/v2/global"
@@ -88,52 +90,97 @@ type NodeService struct {
 
 // NodeRegisterForm 节点注册参数
 type NodeRegisterForm struct {
-	NodeId      string   `json:"node_id"`
-	Kind        string   `json:"kind"`
-	Name        string   `json:"name"`
-	Addr        string   `json:"addr"`
-	LanAddr     string   `json:"lan_addr"`
-	LanAddrs    []string `json:"lan_addrs"`
-	Region      string   `json:"region"`
-	Version     string   `json:"version"`
-	MaxSessions int      `json:"max_sessions"`
-	Weight      int      `json:"weight"`
+	NodeId  string `json:"node_id"`
+	Kind    string `json:"kind"`
+	Name    string `json:"name"`
+	Addr    string `json:"addr"`
+	LanAddr string `json:"lan_addr"`
+	// LanAddrs 用指针区分「未发送」与「空数组」：
+	//   - nil     = 本次注册没带这个字段（旧版 agent），**不动**库里已有的候选；
+	//   - 空数组  = 节点明确上报"没有任何可用内网地址"，把 lan_addrs 与 lan_addr 一起清空。
+	// 用 []string 时两者都解码成 nil，历史数据里的候选会被"没带字段"悄悄清掉。
+	LanAddrs    *[]string `json:"lan_addrs"`
+	Region      string    `json:"region"`
+	Version     string    `json:"version"`
+	MaxSessions int       `json:"max_sessions"`
+	Weight      int       `json:"weight"`
 }
 
 // NodeHeartbeatForm 节点心跳参数
+//
+// 注意：这里**没有** lan_addrs 字段。节点 agent 只在注册时上报候选内网地址，
+// 心跳报文里从来不带（此前保留字段 + 刷新分支等于一段永远走不到的死代码）。
 type NodeHeartbeatForm struct {
-	NodeId    string   `json:"node_id"`
-	Peers     int64    `json:"peers"`
-	Sessions  int64    `json:"sessions"`
-	BwIn      int64    `json:"bw_in"`
-	BwOut     int64    `json:"bw_out"`
-	CpuPct    int      `json:"cpu_pct"`
-	MemPct    int      `json:"mem_pct"`
-	UptimeSec int64    `json:"uptime_sec"`
-	Version   string   `json:"version"`
-	LanAddrs  []string `json:"lan_addrs"`
+	NodeId    string `json:"node_id"`
+	Peers     int64  `json:"peers"`
+	Sessions  int64  `json:"sessions"`
+	BwIn      int64  `json:"bw_in"`
+	BwOut     int64  `json:"bw_out"`
+	CpuPct    int    `json:"cpu_pct"`
+	MemPct    int    `json:"mem_pct"`
+	UptimeSec int64  `json:"uptime_sec"`
+	Version   string `json:"version"`
 }
 
 // maxLanAddrs 候选内网地址上限：多网卡也就几张，超过说明数据有问题。
 const maxLanAddrs = 8
 
+// maxLanAddrLen 单条候选内网地址长度上限（IPv4 host:port 最长也就 21 字符）。
+const maxLanAddrLen = 64
+
+// isPrivateIPv4 判断 IP 是否属于私网/内网网段。
+//
+// 只认这四段：10/8、172.16/12、192.168/16、100.64/10（运营商级 NAT，部分 VPN
+// 也用这一段）。公网地址不能当"内网候选"：客户端拿到后会去直连一个公网地址，
+// 既省不了绕行，又会让 relay-server-lan 的择优逻辑白跑一次探测。
+func isPrivateIPv4(ip net.IP) bool {
+	v4 := ip.To4()
+	if v4 == nil {
+		return false
+	}
+	switch {
+	case v4[0] == 10: // 10.0.0.0/8
+		return true
+	case v4[0] == 172 && v4[1] >= 16 && v4[1] <= 31: // 172.16.0.0/12
+		return true
+	case v4[0] == 192 && v4[1] == 168: // 192.168.0.0/16
+		return true
+	case v4[0] == 100 && v4[1] >= 64 && v4[1] <= 127: // 100.64.0.0/10
+		return true
+	}
+	return false
+}
+
+// IsPrivateLanAddr 校验一条候选内网地址：合法 host:port、长度不超限、主机部分是私网 IPv4。
+//
+// 后台编辑接口用它先给出明确报错（管理员填错不该被静默丢弃）；
+// normalizeLanAddrs 用它做节点上报数据的静默过滤，两处规则完全一致。
+func IsPrivateLanAddr(addr string) bool {
+	addr = strings.TrimSpace(addr)
+	if addr == "" || len(addr) > maxLanAddrLen || !ValidHostPort(addr) {
+		return false
+	}
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(strings.TrimSpace(host))
+	return ip != nil && isPrivateIPv4(ip)
+}
+
 // normalizeLanAddrs 清洗节点上报的候选内网地址。
 //
-// 保留私网地址（这正是要的），只丢掉明显无效的值：空串、回环、未指定地址。
+// 保留私网地址（这正是要的），只丢掉不合规的值：空串、长度超限、非法 host:port、
+// 主机部分不是私网 IPv4（回环 / 公网 / IPv6 / 容器外的脏数据）。
+// 不合规项**静默丢弃**：这些是节点按本机网卡自动探测出来的，为一条脏数据整体
+// 报错会让节点彻底注册不上。
 // 去重并保序（第一个作为兜底的内网地址），最多留 maxLanAddrs 个。
 func normalizeLanAddrs(list []string) []string {
 	out := make([]string, 0, len(list))
 	seen := make(map[string]bool, len(list))
 	for _, a := range list {
 		a = strings.TrimSpace(a)
-		if a == "" || seen[a] {
-			continue
-		}
-		host := a
-		if h, _, err := net.SplitHostPort(a); err == nil {
-			host = h
-		}
-		if ip := net.ParseIP(host); ip != nil && (ip.IsLoopback() || ip.IsUnspecified()) {
+		if a == "" || seen[a] || !IsPrivateLanAddr(a) {
 			continue
 		}
 		seen[a] = true
@@ -202,11 +249,18 @@ func (s *NodeService) Register(f *NodeRegisterForm) (*model.ServerNode, error) {
 	f.NodeId = strings.TrimSpace(f.NodeId)
 	f.Addr = strings.TrimSpace(f.Addr)
 	f.LanAddr = strings.TrimSpace(f.LanAddr)
-	// 候选内网地址：去重/过滤无效值；有列表时让旧的单值字段与第一个保持一致，
-	// 避免"lan_addr 与 lan_addrs[0] 不一致"导致探测和展示各说各话。
-	f.LanAddrs = normalizeLanAddrs(f.LanAddrs)
-	if len(f.LanAddrs) > 0 {
-		f.LanAddr = f.LanAddrs[0]
+	// 候选内网地址：nil（未发送）与空数组的语义不同 —— 前者是旧版 agent
+	// 只是没带这个字段，不能把库里已有的候选清掉；后者是节点明确上报
+	// "我一个内网地址都没有"，应当把 lan_addrs / lan_addr 一起清空。
+	lanAddrsSent := f.LanAddrs != nil
+	var lanList []string
+	if lanAddrsSent {
+		lanList = normalizeLanAddrs(*f.LanAddrs)
+		// 有列表时让旧的单值字段与第一个保持一致，
+		// 避免"lan_addr 与 lan_addrs[0] 不一致"导致探测和展示各说各话。
+		if len(lanList) > 0 {
+			f.LanAddr = lanList[0]
+		}
 	}
 	if f.NodeId == "" || f.Addr == "" || f.Kind == "" {
 		return nil, fmt.Errorf("node_id/kind/addr 不能为空")
@@ -243,7 +297,7 @@ func (s *NodeService) Register(f *NodeRegisterForm) (*model.ServerNode, error) {
 			Name:        f.Name,
 			Addr:        f.Addr,
 			LanAddr:     f.LanAddr,
-			LanAddrs:    strings.Join(f.LanAddrs, ","),
+			LanAddrs:    strings.Join(lanList, ","),
 			Region:      f.Region,
 			Version:     f.Version,
 			Weight:      f.Weight,
@@ -280,8 +334,15 @@ func (s *NodeService) Register(f *NodeRegisterForm) (*model.ServerNode, error) {
 		updates["lan_addr"] = f.LanAddr
 	}
 	// 候选列表整体覆盖：网卡增减时节点每轮上报的都是全量。
-	if len(f.LanAddrs) > 0 && !locked["lan_addr"] {
-		updates["lan_addrs"] = strings.Join(f.LanAddrs, ",")
+	// 显式空数组 = 节点确认没有可用内网地址，两个字段一起清掉；否则旧的
+	// lan_addr 会一直留着，客户端继续去连一个已经不存在的地址。
+	if lanAddrsSent && !locked["lan_addr"] {
+		if len(lanList) > 0 {
+			updates["lan_addrs"] = strings.Join(lanList, ",")
+		} else {
+			updates["lan_addrs"] = ""
+			updates["lan_addr"] = ""
+		}
 	}
 	if f.Name != "" && !locked["name"] {
 		updates["name"] = f.Name
@@ -334,16 +395,9 @@ func (s *NodeService) Heartbeat(f *NodeHeartbeatForm) error {
 	if f.Version != "" {
 		updates["version"] = f.Version
 	}
-	// 网卡增减（插拔网线、VPN 断开）时靠心跳刷新候选列表；平台接管 lan_addr 时不覆盖。
-	if la := normalizeLanAddrs(f.LanAddrs); len(la) > 0 {
-		var node model.ServerNode
-		if err := DB.Select("id", "overrides").Where("node_id = ?", f.NodeId).First(&node).Error; err == nil {
-			if !overrideSet(parseOverrideList(node.Overrides))["lan_addr"] {
-				updates["lan_addrs"] = strings.Join(la, ",")
-				updates["lan_addr"] = la[0]
-			}
-		}
-	}
+	// 心跳**不刷新** lan_addrs / lan_addr：agent 只在注册时上报候选内网地址，
+	// 心跳报文里根本没有这两个字段（此前这里的分支永远走不到，是死代码）。
+	// 网卡增减（插拔网线 / VPN 断开）靠节点重新注册同步，注册接口才是唯一入口。
 	return DB.Model(&model.ServerNode{}).Where("node_id = ?", f.NodeId).Updates(updates).Error
 }
 
@@ -403,6 +457,11 @@ func (s *NodeService) List(kind string) []model.ServerNode {
 		nodes[i].Score = s.Score(&nodes[i], w)
 		// 候选内网地址：库里存逗号分隔串，这里转成数组给前端渲染（多网卡逐个展示）
 		nodes[i].LanAddrsList = splitLanAddrs(nodes[i].LanAddrs)
+		// 升级前的旧数据只有单值 lan_addr、没有 lan_addrs：用单值兜底成一条候选，
+		// 否则「详情」里能看到地址、表格里却什么都不显示，两边对不上。
+		if len(nodes[i].LanAddrsList) == 0 && strings.TrimSpace(nodes[i].LanAddr) != "" {
+			nodes[i].LanAddrsList = []string{strings.TrimSpace(nodes[i].LanAddr)}
+		}
 	}
 	return nodes
 }
@@ -411,25 +470,46 @@ func (s *NodeService) List(kind string) []model.ServerNode {
 //
 // 只统计已注册的 hbbr 节点（hbbs 不是中继）。客户端拿到映射后，选中某台公网中继时
 // 可以再试它对应的内网地址：可达且明显更快就走内网，通告给对端的仍是公网地址。
+//
+// 过滤规则（客户端会照着逐个探测，脏数据等于白白多等一次超时）：
+//   - 只算在线节点（LastSeen 新鲜），与 Relays() 的离线判定保持一致；
+//   - 候选必须是合法 host:port，且不能等于该节点的公网地址（自映射没有意义）；
+//   - 候选去重，保序。
 func (s *NodeService) RelayLanMap() map[string][]string {
 	var nodes []model.ServerNode
 	if err := DB.Where("kind = ? AND disabled = 0", "hbbr").Find(&nodes).Error; err != nil {
 		return map[string][]string{}
 	}
+	offline := s.OfflineSec()
+	now := time.Now().Unix()
 	out := make(map[string][]string, len(nodes))
 	for _, n := range nodes {
 		addr := strings.TrimSpace(n.Addr)
 		if addr == "" {
 			continue
 		}
+		// 离线节点的内网地址大概率已经变了，下发只会让客户端等一次 800ms 超时。
+		if n.LastSeen == 0 || now-n.LastSeen > offline {
+			continue
+		}
 		lans := splitLanAddrs(n.LanAddrs)
 		if len(lans) == 0 && strings.TrimSpace(n.LanAddr) != "" {
 			lans = []string{strings.TrimSpace(n.LanAddr)}
 		}
-		if len(lans) == 0 {
+		seen := make(map[string]bool, len(lans))
+		clean := make([]string, 0, len(lans))
+		for _, a := range lans {
+			a = strings.TrimSpace(a)
+			if a == "" || a == addr || seen[a] || !ValidHostPort(a) {
+				continue
+			}
+			seen[a] = true
+			clean = append(clean, a)
+		}
+		if len(clean) == 0 {
 			continue
 		}
-		out[addr] = lans
+		out[addr] = clean
 	}
 	return out
 }
@@ -725,18 +805,41 @@ func (s *NodeService) TouchRtt(id uint, rttMs int) {
 // 候选可能有好几个（多网卡），太长的超时会让一轮健康检查拖过 30 秒的 tick 间隔。
 const probeTimeout = 800 * time.Millisecond
 
-// Probe 探测节点 TCP 可达性并回填 RTT。
+// probeConcurrency 一轮健康检查中同时探测的**节点**数上限。
 //
-// 节点会自动上报**全部**候选内网地址（多网卡：业务网 / VPN / Docker 网桥），
-// 这里逐个探测、取延迟最低的那个写 rtt_ms —— 由 api-server 侧做选择，
-// 而不是让节点猜哪个地址是对的：
+// 不能无限并发：节点多时会同时发起大量带 800ms 超时的 TCP 连接，把本地
+// fd / 连接表打满；4 个足够在 30s tick 内探完几十台节点（每台最坏 ~800ms）。
+const probeConcurrency = 4
+
+// probeAllTimeout 整轮健康检查的截止时间，到点后不再启动新的节点探测。
 //
-//   - 容器里上报的可能是容器内网 IP，api-server 探不到 → 跳过，继续试别的
-//   - 同机部署时公网地址没有 NAT 回环 → 探不到，内网地址会命中
-//   - 全部候选都不通才记 -1（未知，评分按最大成本），不能记 0
-func (s *NodeService) Probe(n *model.ServerNode) {
-	candidates := make([]string, 0, maxLanAddrs+1)
-	seen := make(map[string]bool, maxLanAddrs+1)
+// 给 20s 是留出 10s 余量：tick 间隔 30s，探测必须明显短于它，
+// 否则下一轮会被上一轮拖住，表现为"健康检查越跑越慢/干脆不跑"。
+const probeAllTimeout = 20 * time.Second
+
+// probeCandidate 探测单个候选地址，返回（毫秒, 是否可达）。
+//
+// 用 Dialer.DialContext 而不是 net.DialTimeout：整轮超时（ctx）能取消在途连接，
+// 单个地址仍由 Dialer.Timeout 兜底。
+func probeCandidate(ctx context.Context, target string) (int, bool) {
+	begin := time.Now()
+	d := net.Dialer{Timeout: probeTimeout}
+	conn, err := d.DialContext(ctx, "tcp", target)
+	if err != nil {
+		global.Logger.Debugf("[Node] 探测 %s 失败: %v", target, err)
+		return 0, false
+	}
+	_ = conn.Close()
+	return int(time.Since(begin).Milliseconds()), true
+}
+
+// buildProbeCandidates 汇总该节点的全部可探测地址：lan_addrs 全体 → lan_addr → 公网 addr。
+//
+// 顺序有意义：并发探测后若多个候选延迟相同，优先靠前的（内网地址在内网场景下
+// 才是真正想选的那个）。
+func buildProbeCandidates(n *model.ServerNode) []string {
+	candidates := make([]string, 0, maxLanAddrs+2)
+	seen := make(map[string]bool, maxLanAddrs+2)
 	add := func(a string) {
 		a = strings.TrimSpace(a)
 		if a == "" || seen[a] {
@@ -750,23 +853,58 @@ func (s *NodeService) Probe(n *model.ServerNode) {
 	}
 	add(n.LanAddr) // 兼容只上报单值的旧节点
 	add(n.Addr)    // 最后兜底公网地址
+	return candidates
+}
+
+// Probe 探测节点 TCP 可达性并回填 RTT（单节点入口，内部并发探测所有候选）。
+func (s *NodeService) Probe(n *model.ServerNode) {
+	s.probeWithContext(context.Background(), n)
+}
+
+// probeWithContext 并发探测全部候选，取延迟最低的成功项写 rtt_ms。
+//
+// 节点会自动上报**全部**候选内网地址（多网卡：业务网 / VPN / Docker 网桥），
+// 这里并发探测、取延迟最低的那个写 rtt_ms —— 由 api-server 侧做选择，
+// 而不是让节点猜哪个地址是对的：
+//
+//   - 容器里上报的可能是容器内网 IP，api-server 探不到 → 跳过，继续看别的
+//   - 同机部署时公网地址没有 NAT 回环 → 探不到，内网地址会命中
+//   - 全部候选都不通才记 -1（未知，评分按最大成本），不能记 0
+//
+// 必须并发：串行时单节点最坏耗时 = 候选数 × probeTimeout（10 个候选就是 8s），
+// 4~5 台节点就能把 30s 的 tick 拖穿，健康检查滞后到形同停摆。
+func (s *NodeService) probeWithContext(ctx context.Context, n *model.ServerNode) {
+	candidates := buildProbeCandidates(n)
 	if len(candidates) == 0 {
 		DB.Model(&model.ServerNode{}).Where("id = ?", n.Id).Update("rtt_ms", -1)
 		return
 	}
+	// 每个 goroutine 只写自己那一格，天然没有数据竞争；用切片而不是 channel
+	// 可以保留候选顺序（延迟相同时择优更稳定）。
+	type result struct {
+		ms int
+		ok bool
+	}
+	results := make([]result, len(candidates))
+	var wg sync.WaitGroup
+	for i := range candidates {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			ms, ok := probeCandidate(ctx, candidates[idx])
+			results[idx] = result{ms: ms, ok: ok}
+		}(i)
+	}
+	wg.Wait()
+
 	bestMs, bestAddr, okCount := -1, "", 0
-	for _, target := range candidates {
-		begin := time.Now()
-		conn, err := net.DialTimeout("tcp", target, probeTimeout)
-		if err != nil {
-			global.Logger.Debugf("[Node] 探测 %s 失败: %v (node=%s)", target, err, n.NodeId)
+	for i, r := range results {
+		if !r.ok {
 			continue
 		}
-		_ = conn.Close()
-		ms := int(time.Since(begin).Milliseconds())
 		okCount++
-		if bestMs < 0 || ms < bestMs {
-			bestMs, bestAddr = ms, target
+		if bestMs < 0 || r.ms < bestMs {
+			bestMs, bestAddr = r.ms, candidates[i]
 		}
 	}
 	if bestMs < 0 {
@@ -778,15 +916,50 @@ func (s *NodeService) Probe(n *model.ServerNode) {
 	s.TouchRtt(n.Id, bestMs)
 }
 
+// ProbeAll 并发探测一批节点（信号量限流 + 整轮截止时间），供定时健康检查与
+// 后台「立即刷新」共用。
+//
+// 入参是**值切片**：每个 goroutine 各自持有一份 model.ServerNode 拷贝，
+// 绝不把同一个 *model.ServerNode 交给多个 goroutine —— 写库一律按 id，
+// 不依赖指针身份，避免并发复用同一指针带来的数据竞争。
+func (s *NodeService) ProbeAll(nodes []model.ServerNode) {
+	if len(nodes) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), probeAllTimeout)
+	defer cancel()
+	sem := make(chan struct{}, probeConcurrency)
+	var wg sync.WaitGroup
+	for i := range nodes {
+		select {
+		case <-ctx.Done():
+			// 整轮已到截止时间：不再启动新探测，等在途的收尾后返回。
+			global.Logger.Warnf("[Node] 健康检查已达 %v 截止时间，跳过剩余 %d 个节点",
+				probeAllTimeout, len(nodes)-i)
+			wg.Wait()
+			return
+		case sem <- struct{}{}:
+		}
+		wg.Add(1)
+		go func(node model.ServerNode) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			s.probeWithContext(ctx, &node)
+		}(nodes[i])
+	}
+	wg.Wait()
+}
+
 // StartHealthCheck 定时健康检查：探测可达性并回填 RTT（在线状态由心跳判定）。
+//
+// 并发只发生在 tick 内部（ProbeAll），不新增启动期 goroutine ——
+// 项目约定所有后台 goroutine 必须写在 http.ApiInit() 之前，由 apimain 统一启动。
 func (s *NodeService) StartHealthCheck() {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	for range ticker.C {
 		nodes := s.List("")
-		for i := range nodes {
-			s.Probe(&nodes[i])
-		}
+		s.ProbeAll(nodes)
 	}
 }
 
