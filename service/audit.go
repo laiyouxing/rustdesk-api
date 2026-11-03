@@ -42,11 +42,21 @@ func (as *AuditService) UpdateAuditConn(u *model.AuditConn) error {
 	return DB.Model(u).Updates(u).Error
 }
 
-// InfoByPeerIdAndConnId
+// InfoByPeerIdAndConnId 按 (peer_id, conn_id) 查记录。
+//
+// conn_id 是客户端「进程内自增」的连接序号，客户端重启后会从 1 重新开始，
+// 所以历史记录里同一个 (peer_id, conn_id) 可能有多条。这里优先命中「进行中」
+// （close_time = 0）的那条，其次取最新的一条——否则 close 审计会写到很久以前
+// 的老记录上，让进行中的记录永远关不掉。
 func (as *AuditService) InfoByPeerIdAndConnId(peerId string, connId int64) (res *model.AuditConn) {
 	res = &model.AuditConn{}
-	DB.Where("peer_id = ? and conn_id = ?", peerId, connId).First(res)
-	return
+	if DB.Where("peer_id = ? and conn_id = ? and close_time = 0", peerId, connId).
+		Order("id desc").First(res).Error == nil && res.Id != 0 {
+		return res
+	}
+	res = &model.AuditConn{}
+	DB.Where("peer_id = ? and conn_id = ?", peerId, connId).Order("id desc").First(res)
+	return res
 }
 
 // UpsertByPeerIdAndConnId 按 (peer_id, conn_id) 更新已存在记录的非零字段；不存在则创建。
@@ -61,6 +71,97 @@ func (as *AuditService) UpsertByPeerIdAndConnId(u *model.AuditConn) error {
 		return DB.Model(&model.AuditConn{}).Where("id = ?", ex.Id).Updates(u).Error
 	}
 	return DB.Create(u).Error
+}
+
+// ConnMergeWindow 同一次连接操作的重试合并窗口。
+//
+// RustDesk 建立连接时会多次尝试（直连打洞失败回退中继、网络抖动后重连、并行拨号），
+// 每一次尝试都会被控端各发一条 new 审计，后台看起来就是「同一个用户点了一次，
+// 却出现三四条连接记录」。同一对 (控制端 from_peer → 被控端 peer_id) 在窗口内
+// 再次鉴权成功，就认为仍是同一次操作，合并进同一条记录。
+const ConnMergeWindow = 120 * time.Second
+
+// MergeConnAttempt 把本次「鉴权成功」的连接并入同一次操作已有的记录。
+//
+// 返回被合并记录的主键；返回 0 表示没有可合并的记录，调用方按原有逻辑 upsert。
+//
+// 合并方式：保留最早那条（创建时间即这次操作的开始时间），把 conn_id / session_id
+// 等换成最新值——conn_id 必须换，后续 close 审计是靠 (peer_id, conn_id) 定位记录的；
+// 同时删掉本次尝试临时建的行，以及同一次操作里没能登录成功的尝试行（这些行 from_peer
+// 为空，只能靠「同被控端 + 同控制端 IP + 窗口内」识别）。
+func (as *AuditService) MergeConnAttempt(cur *model.AuditConn) uint {
+	if cur == nil || cur.PeerId == "" || cur.FromPeer == "" {
+		return 0
+	}
+	now := time.Now()
+	// 本次尝试通常已由 new 事件建过记录；若 authed 先到（日志里出现过竞态）则还没有。
+	curRow := &model.AuditConn{}
+	hasCur := DB.Where("peer_id = ? and conn_id = ?", cur.PeerId, cur.ConnId).
+		Order("id desc").First(curRow).Error == nil && curRow.Id != 0
+	// 这条记录本身已经是「已鉴权、进行中」的会话行（重复上报的同一条 authed 事件）：
+	// 直接算作已处理，避免把重复事件当成新尝试去合并到别的记录上。
+	if hasCur && curRow.FromPeer == cur.FromPeer && curRow.CloseTime == 0 {
+		return curRow.Id
+	}
+
+	q := DB.Model(&model.AuditConn{}).
+		Where("peer_id = ? and from_peer = ?", cur.PeerId, cur.FromPeer).
+		Where("(close_time = 0 OR close_time >= ?)", now.Add(-ConnMergeWindow).Unix())
+	if hasCur {
+		q = q.Where("id <> ?", curRow.Id)
+	}
+	primary := &model.AuditConn{}
+	if q.Order("id desc").First(primary).Error != nil || primary.Id == 0 {
+		return 0
+	}
+
+	updates := map[string]interface{}{
+		"conn_id":       cur.ConnId,
+		"close_time":    0, // 同一次操作的重试，记录回到「进行中」
+		"attempt_count": gorm.Expr("attempt_count + 1"),
+	}
+	if cur.SessionId != "" && cur.SessionId != "0" {
+		updates["session_id"] = cur.SessionId
+	}
+	if cur.Type != 0 {
+		updates["type"] = cur.Type
+	}
+	if cur.Ip != "" {
+		updates["ip"] = cur.Ip
+	}
+	for k, v := range map[string]string{
+		"version":       cur.Version,
+		"from_version":  cur.FromVersion,
+		"from_name":     cur.FromName,
+		"peer_hostname": cur.PeerHostname,
+		"peer_alias":    cur.PeerAlias,
+		"from_hostname": cur.FromHostname,
+		"from_alias":    cur.FromAlias,
+	} {
+		if v != "" {
+			updates[k] = v
+		}
+	}
+	if err := DB.Model(&model.AuditConn{}).Where("id = ?", primary.Id).Updates(updates).Error; err != nil {
+		global.Logger.Warn("MergeConnAttempt update", err)
+		return 0
+	}
+
+	// 本次尝试的临时行：信息已经搬到主记录上了。
+	if hasCur && curRow.Id != primary.Id {
+		if err := DB.Delete(&model.AuditConn{}, curRow.Id).Error; err != nil {
+			global.Logger.Warn("MergeConnAttempt delete current", err)
+		}
+	}
+	// 同一次操作里没登录成功的尝试：没有 from_peer，靠同 IP + 时间窗归属。
+	if cur.Ip != "" {
+		DB.Where("peer_id = ? and from_peer = '' and ip = ? and id <> ? and created_at >= ?",
+			cur.PeerId, cur.Ip, primary.Id, now.Add(-ConnMergeWindow)).
+			Delete(&model.AuditConn{})
+	}
+	global.Logger.Infof("MergeConnAttempt: conn %d merged into audit id %d (%s -> %s)",
+		cur.ConnId, primary.Id, cur.FromPeer, cur.PeerId)
+	return primary.Id
 }
 
 // ConnInfoById
@@ -297,6 +398,16 @@ func (as *AuditService) closeStaleConns() {
 	if res.RowsAffected > 0 {
 		global.Logger.Infof("closeStaleConns: closed %d stale 'in-progress' audit_conn records", res.RowsAffected)
 	}
+	// 从没登录成功的尝试（from_peer 为空，只有 new 没有补全）10 分钟后视为失败连接，关掉。
+	// 这类行是客户端重试/并行拨号的残留，不该在「进行中」里一直挂着。
+	resFailed := DB.Model(&model.AuditConn{}).
+		Where("close_time = 0 AND from_peer = '' AND created_at < ?", now.Add(-10*time.Minute)).
+		Update("close_time", now.Unix())
+	if resFailed.Error != nil {
+		global.Logger.Warn("closeStaleConns failed-attempts", resFailed.Error)
+	} else if resFailed.RowsAffected > 0 {
+		global.Logger.Infof("closeStaleConns: closed %d unauthenticated 'in-progress' audit_conn records", resFailed.RowsAffected)
+	}
 }
 
 // ========== 连接心跳追踪 ==========
@@ -393,5 +504,27 @@ func (as *AuditService) CloseInProgressByFromPeerAndPeer(fromPeer, peerId string
 	}
 	if res.RowsAffected > 0 {
 		global.Logger.Infof("CloseInProgressByFromPeerAndPeer: closed %d in-progress audit_conn for %s -> %s", res.RowsAffected, fromPeer, peerId)
+	}
+}
+
+// CloseInProgressByFromPeerAndPeerExcept 同 CloseInProgressByFromPeerAndPeer，但保留本次连接
+// （keepConnId）的记录不关闭。
+//
+// 为什么需要：鉴权成功后的补全更新会先把本次记录 upsert 成「进行中」，随后再关旧记录时
+// 若不加排除，会把刚建立的这条一起关掉——表现就是连接明明还在，日志却已经显示断开。
+func (as *AuditService) CloseInProgressByFromPeerAndPeerExcept(fromPeer, peerId string, keepConnId int64) {
+	if fromPeer == "" || peerId == "" {
+		return
+	}
+	now := time.Now().Unix()
+	res := DB.Model(&model.AuditConn{}).
+		Where("close_time = 0 AND from_peer = ? AND peer_id = ? AND conn_id <> ?", fromPeer, peerId, keepConnId).
+		Update("close_time", now)
+	if res.Error != nil {
+		global.Logger.Warn("CloseInProgressByFromPeerAndPeerExcept", res.Error)
+		return
+	}
+	if res.RowsAffected > 0 {
+		global.Logger.Infof("CloseInProgressByFromPeerAndPeerExcept: closed %d stale audit_conn for %s -> %s", res.RowsAffected, fromPeer, peerId)
 	}
 }

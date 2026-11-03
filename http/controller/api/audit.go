@@ -54,9 +54,16 @@ func (a *Audit) AuditConn(c *gin.Context) {
 			service.AllService.AuditService.UpdateAuditConn(ex)
 		}
 	} else if af.Action == "" {
-		// 授权成功后的补全更新：改为 upsert，若 new 请求尚未落库（竞态）也能先建记录，
-		// 避免来源名称等信息因查不到记录而丢失。
+		// 授权成功：先尝试把这次尝试并入「同一次操作」的已有记录。
+		// 网络抖动重连、NAT 打洞重试都会走到这里——不合并的话，用户点一次连接
+		// 会在后台留下三四条记录。
+		if merged := service.AllService.AuditService.MergeConnAttempt(ac); merged != 0 {
+			// 已并入既有记录（conn_id 等已换成本次的值），不再单独建行。
+			response.Success(c, "")
+			return
+		}
 		up := &model.AuditConn{
+			Action:       model.AuditActionNew,
 			ConnId:       ac.ConnId,
 			PeerId:       ac.PeerId,
 			FromPeer:     ac.FromPeer,
@@ -70,12 +77,12 @@ func (a *Audit) AuditConn(c *gin.Context) {
 			FromHostname: ac.FromHostname,
 			FromAlias:    ac.FromAlias,
 		}
-		service.AllService.AuditService.UpsertByPeerIdAndConnId(up)
-		// 补全更新携带了完整来源信息时，也尝试关闭同 (from_peer, peer_id) 的旧进行中记录。
-		// 解决重连时 "new" 请求缺少 peer 字段导致旧记录未关闭的问题。
+		// 先关掉同 (from_peer, peer_id) 更早的「进行中」记录，再写本次记录。
+		// 顺序很重要：反过来的话会把刚建立的这条一起关掉（见函数注释）。
 		if ac.FromPeer != "" && ac.PeerId != "" {
-			service.AllService.AuditService.CloseInProgressByFromPeerAndPeer(ac.FromPeer, ac.PeerId)
+			service.AllService.AuditService.CloseInProgressByFromPeerAndPeerExcept(ac.FromPeer, ac.PeerId, ac.ConnId)
 		}
+		service.AllService.AuditService.UpsertByPeerIdAndConnId(up)
 	}
 	response.Success(c, "")
 }

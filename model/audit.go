@@ -17,6 +17,10 @@ type AuditConn struct {
 	Type      int    `json:"type" gorm:"default:0;not null;"`
 	Uuid      string `json:"uuid" gorm:"default:'';not null;"`
 	CloseTime int64  `json:"close_time" gorm:"default:0;not null;"`
+	// AttemptCount 这次操作里实际发起了几次连接尝试。
+	// 网络抖动 / NAT 打洞失败会让客户端对同一次点击重试多次，服务端每次都会收到
+	// 独立的 new 审计；服务端会把它们合并成一条记录，用这个字段记下合并了几次。
+	AttemptCount int `json:"attempt_count" gorm:"default:1;not null;"`
 	// Version 被控端（peer_id 那台设备）的客户端版本。
 	Version string `json:"version" gorm:"default:'';not null;"`
 	// FromVersion 控制端（from_peer 那台设备）的客户端版本。
