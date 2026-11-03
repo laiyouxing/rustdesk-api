@@ -70,41 +70,70 @@ func (as *AuditService) ConnInfoById(id uint) (res *model.AuditConn) {
 	return
 }
 
-// peerVersions 批量查设备版本：设备 id -> 版本号。
-func peerVersions(ids []string) map[string]string {
-	verMap := make(map[string]string, len(ids))
-	if len(ids) == 0 {
-		return verMap
-	}
-	type peerVersion struct {
-		Id      string
-		Version string
-	}
-	var rows []peerVersion
-	if err := DB.Model(&model.Peer{}).
-		Select("id, version").
-		Where("id in ?", ids).
-		Find(&rows).Error; err != nil {
-		global.Logger.Warn("peerVersions", err)
-		return verMap
-	}
-	for _, r := range rows {
-		verMap[r.Id] = r.Version
-	}
-	return verMap
+// peerInfo peers 表里与审计展示相关的设备信息。
+type peerInfo struct {
+	Version  string
+	Hostname string
+	Alias    string
 }
 
-// FillVersionsFromPeers 用 peers 表里登记的客户端版本，补全审计记录中缺失的版本。
+// peerInfos 批量查设备信息：设备 id -> peerInfo。
+func peerInfos(ids []string) map[string]peerInfo {
+	infoMap := make(map[string]peerInfo, len(ids))
+	if len(ids) == 0 {
+		return infoMap
+	}
+	type row struct {
+		Id       string
+		Version  string
+		Hostname string
+		Alias    string
+	}
+	var rows []row
+	if err := DB.Model(&model.Peer{}).
+		Select("id, version, hostname, alias").
+		Where("id in ?", ids).
+		Find(&rows).Error; err != nil {
+		global.Logger.Warn("peerInfos", err)
+		return infoMap
+	}
+	for _, r := range rows {
+		infoMap[r.Id] = peerInfo{Version: r.Version, Hostname: r.Hostname, Alias: r.Alias}
+	}
+	return infoMap
+}
+
+// fillPeerInfo 用 peers 表的值补齐一次审计记录里的版本/主机名/别名；已有值不覆盖。
+func fillPeerInfo(peerId string, version, hostname, alias *string, m map[string]peerInfo) {
+	if peerId == "" {
+		return
+	}
+	info, ok := m[peerId]
+	if !ok {
+		return
+	}
+	if *version == "" {
+		*version = info.Version
+	}
+	if *hostname == "" {
+		*hostname = info.Hostname
+	}
+	if *alias == "" {
+		*alias = info.Alias
+	}
+}
+
+// FillPeerInfoFromPeers 用 peers 表兜底补全「连接日志」的版本 / 主机名 / 别名。
 //
-// 1.7.31 之前的客户端不会在 /audit/conn 里上报 version/from_version，靠这条兜底
-// 也能让「连接日志」直接看到版本；新版客户端上报了就优先用上报值（更准确，
-// 反映连接发生时的版本，而不是查询时 peers 表里的现值）。
-func (as *AuditService) FillVersionsFromPeers(c *model.AuditConn) {
+// 老客户端不会在 /audit/conn 里上报 version/from_version，主机名和别名本来就由
+// 服务端维护；没上报/没存过的字段用 peers 表补齐，保证后台列表和导出都能看到。
+// 已存下的值优先——那是「连接发生时」的快照，设备改名后历史记录不会跟着变。
+func (as *AuditService) FillPeerInfoFromPeers(c *model.AuditConn) {
 	if c == nil {
 		return
 	}
-	needPeer := c.Version == "" && c.PeerId != ""
-	needFrom := c.FromVersion == "" && c.FromPeer != ""
+	needPeer := c.PeerId != "" && (c.Version == "" || c.PeerHostname == "" || c.PeerAlias == "")
+	needFrom := c.FromPeer != "" && (c.FromVersion == "" || c.FromHostname == "" || c.FromAlias == "")
 	if !needPeer && !needFrom {
 		return
 	}
@@ -115,22 +144,22 @@ func (as *AuditService) FillVersionsFromPeers(c *model.AuditConn) {
 	if needFrom {
 		ids = append(ids, c.FromPeer)
 	}
-	verMap := peerVersions(ids)
+	m := peerInfos(ids)
 	if needPeer {
-		c.Version = verMap[c.PeerId]
+		fillPeerInfo(c.PeerId, &c.Version, &c.PeerHostname, &c.PeerAlias, m)
 	}
 	if needFrom {
-		c.FromVersion = verMap[c.FromPeer]
+		fillPeerInfo(c.FromPeer, &c.FromVersion, &c.FromHostname, &c.FromAlias, m)
 	}
 }
 
-// FillFileVersionsFromPeers 同 FillVersionsFromPeers，用于「文件传输日志」。
-func (as *AuditService) FillFileVersionsFromPeers(f *model.AuditFile) {
+// FillFilePeerInfoFromPeers 同 FillPeerInfoFromPeers，用于「文件传输日志」。
+func (as *AuditService) FillFilePeerInfoFromPeers(f *model.AuditFile) {
 	if f == nil {
 		return
 	}
-	needPeer := f.Version == "" && f.PeerId != ""
-	needFrom := f.FromVersion == "" && f.FromPeer != ""
+	needPeer := f.PeerId != "" && (f.Version == "" || f.PeerHostname == "" || f.PeerAlias == "")
+	needFrom := f.FromPeer != "" && (f.FromVersion == "" || f.FromHostname == "" || f.FromAlias == "")
 	if !needPeer && !needFrom {
 		return
 	}
@@ -141,17 +170,17 @@ func (as *AuditService) FillFileVersionsFromPeers(f *model.AuditFile) {
 	if needFrom {
 		ids = append(ids, f.FromPeer)
 	}
-	verMap := peerVersions(ids)
+	m := peerInfos(ids)
 	if needPeer {
-		f.Version = verMap[f.PeerId]
+		fillPeerInfo(f.PeerId, &f.Version, &f.PeerHostname, &f.PeerAlias, m)
 	}
 	if needFrom {
-		f.FromVersion = verMap[f.FromPeer]
+		fillPeerInfo(f.FromPeer, &f.FromVersion, &f.FromHostname, &f.FromAlias, m)
 	}
 }
 
-// FillFileListVersions 批量给「文件传输日志」列表补版本，避免逐条查询。
-func (as *AuditService) FillFileListVersions(list []*model.AuditFile) {
+// FillFileListPeerInfo 批量给「文件传输日志」列表补版本/主机名/别名，避免逐条查询。
+func (as *AuditService) FillFileListPeerInfo(list []*model.AuditFile) {
 	if len(list) == 0 {
 		return
 	}
@@ -160,27 +189,23 @@ func (as *AuditService) FillFileListVersions(list []*model.AuditFile) {
 		if f == nil {
 			continue
 		}
-		if f.Version == "" && f.PeerId != "" {
+		if f.PeerId != "" && (f.Version == "" || f.PeerHostname == "" || f.PeerAlias == "") {
 			ids = append(ids, f.PeerId)
 		}
-		if f.FromVersion == "" && f.FromPeer != "" {
+		if f.FromPeer != "" && (f.FromVersion == "" || f.FromHostname == "" || f.FromAlias == "") {
 			ids = append(ids, f.FromPeer)
 		}
 	}
 	if len(ids) == 0 {
 		return
 	}
-	verMap := peerVersions(ids)
+	m := peerInfos(ids)
 	for _, f := range list {
 		if f == nil {
 			continue
 		}
-		if f.Version == "" && f.PeerId != "" {
-			f.Version = verMap[f.PeerId]
-		}
-		if f.FromVersion == "" && f.FromPeer != "" {
-			f.FromVersion = verMap[f.FromPeer]
-		}
+		fillPeerInfo(f.PeerId, &f.Version, &f.PeerHostname, &f.PeerAlias, m)
+		fillPeerInfo(f.FromPeer, &f.FromVersion, &f.FromHostname, &f.FromAlias, m)
 	}
 }
 

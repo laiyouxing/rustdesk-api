@@ -32,11 +32,9 @@ func (a *Audit) List(c *gin.Context) {
 		tx.Where("action = 'new'")
 		tx.Order("id desc")
 	})
-	// Enrich with peer hostname/alias and close_time string
+	// Enrich：主机名/别名/版本来自 peers 表；记录里已存的（写入时快照）优先。
 	type ConnEntry struct {
 		model.AuditConn
-		PeerHostname string `json:"peer_hostname"`
-		PeerAlias    string `json:"peer_alias"`
 		CloseTimeStr string `json:"close_time_str"`
 	}
 	var enriched []*ConnEntry
@@ -44,6 +42,9 @@ func (a *Audit) List(c *gin.Context) {
 	for _, conn := range res.AuditConns {
 		if conn.PeerId != "" {
 			targetPeerIds = append(targetPeerIds, conn.PeerId)
+		}
+		if conn.FromPeer != "" {
+			targetPeerIds = append(targetPeerIds, conn.FromPeer)
 		}
 	}
 	type peerMeta struct{ Hostname, Alias, Version string }
@@ -63,9 +64,25 @@ func (a *Audit) List(c *gin.Context) {
 	}
 	for _, conn := range res.AuditConns {
 		h := hostMap[conn.PeerId]
-		// 版本优先用连接发生时记录的值；老记录没存过，用 peers 表现值兜底。
+		fh := hostMap[conn.FromPeer]
+		// 版本/主机名/别名优先用连接发生时记录的值；老记录没存过，用 peers 表现值兜底。
 		if conn.Version == "" {
 			conn.Version = h.Version
+		}
+		if conn.PeerHostname == "" {
+			conn.PeerHostname = h.Hostname
+		}
+		if conn.PeerAlias == "" {
+			conn.PeerAlias = h.Alias
+		}
+		if conn.FromVersion == "" {
+			conn.FromVersion = fh.Version
+		}
+		if conn.FromHostname == "" {
+			conn.FromHostname = fh.Hostname
+		}
+		if conn.FromAlias == "" {
+			conn.FromAlias = fh.Alias
 		}
 		closeTimeStr := ""
 		if conn.CloseTime > 0 {
@@ -73,8 +90,6 @@ func (a *Audit) List(c *gin.Context) {
 		}
 		enriched = append(enriched, &ConnEntry{
 			AuditConn:    *conn,
-			PeerHostname: h.Hostname,
-			PeerAlias:    h.Alias,
 			CloseTimeStr: closeTimeStr,
 		})
 	}

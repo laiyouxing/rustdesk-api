@@ -34,9 +34,9 @@ func (a *Audit) AuditConn(c *gin.Context) {
 	c.ShouldBindBodyWith(ttt, binding.JSON)
 	fmt.Println(ttt)*/
 	ac := af.ToAuditConn()
-	// 版本补全：新版客户端会带 version/from_version，老客户端不带，用 peers 表兜底，
-	// 保证「连接日志」里历史与现网设备都能看到版本。
-	service.AllService.AuditService.FillVersionsFromPeers(ac)
+	// 版本 / 主机名 / 别名补全：新版客户端会带 version/from_version，老客户端不带；
+	// 主机名与别名由服务端 peers 表维护。统一在这里补齐，写库时即成为快照。
+	service.AllService.AuditService.FillPeerInfoFromPeers(ac)
 	if af.Action == model.AuditActionNew {
 		// 同一用户再次向同一对端发起连接时，先把上一条仍“进行中”的记录关闭，
 		// 避免异常断开（未收到 close 审计）导致“最近连接记录”一直显示“进行中”。
@@ -57,14 +57,18 @@ func (a *Audit) AuditConn(c *gin.Context) {
 		// 授权成功后的补全更新：改为 upsert，若 new 请求尚未落库（竞态）也能先建记录，
 		// 避免来源名称等信息因查不到记录而丢失。
 		up := &model.AuditConn{
-			ConnId:      ac.ConnId,
-			PeerId:      ac.PeerId,
-			FromPeer:    ac.FromPeer,
-			FromName:    ac.FromName,
-			SessionId:   ac.SessionId,
-			Type:        ac.Type,
-			Version:     ac.Version,
-			FromVersion: ac.FromVersion,
+			ConnId:       ac.ConnId,
+			PeerId:       ac.PeerId,
+			FromPeer:     ac.FromPeer,
+			FromName:     ac.FromName,
+			SessionId:    ac.SessionId,
+			Type:         ac.Type,
+			Version:      ac.Version,
+			FromVersion:  ac.FromVersion,
+			PeerHostname: ac.PeerHostname,
+			PeerAlias:    ac.PeerAlias,
+			FromHostname: ac.FromHostname,
+			FromAlias:    ac.FromAlias,
 		}
 		service.AllService.AuditService.UpsertByPeerIdAndConnId(up)
 		// 补全更新携带了完整来源信息时，也尝试关闭同 (from_peer, peer_id) 的旧进行中记录。
@@ -97,8 +101,8 @@ func (a *Audit) AuditFile(c *gin.Context) {
 	//c.ShouldBindBodyWith(ttt, binding.JSON)
 	//fmt.Println(ttt)
 	af := aff.ToAuditFile()
-	// 版本补全：老客户端不上报 version/from_version，用 peers 表兜底。
-	service.AllService.AuditService.FillFileVersionsFromPeers(af)
+	// 版本 / 主机名 / 别名补全：老客户端不上报这些，用 peers 表兜底。
+	service.AllService.AuditService.FillFilePeerInfoFromPeers(af)
 	service.AllService.AuditService.CreateAuditFile(af)
 	response.Success(c, "")
 }

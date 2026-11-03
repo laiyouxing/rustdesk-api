@@ -21,6 +21,12 @@ type AuditConn struct {
 	Version string `json:"version" gorm:"default:'';not null;"`
 	// FromVersion 控制端（from_peer 那台设备）的客户端版本。
 	FromVersion string `json:"from_version" gorm:"default:'';not null;"`
+	// PeerHostname / PeerAlias 被控端的主机名与别名（写入时快照，设备改名后历史不变）。
+	PeerHostname string `json:"peer_hostname" gorm:"default:'';not null;"`
+	PeerAlias    string `json:"peer_alias" gorm:"default:'';not null;"`
+	// FromHostname / FromAlias 控制端的主机名与别名。
+	FromHostname string `json:"from_hostname" gorm:"default:'';not null;"`
+	FromAlias    string `json:"from_alias" gorm:"default:'';not null;"`
 	TimeModel
 }
 
@@ -45,6 +51,12 @@ type AuditFile struct {
 	Version string `json:"version" gorm:"default:'';not null;"`
 	// FromVersion 控制端（from_peer 那台设备）的客户端版本。
 	FromVersion string `json:"from_version" gorm:"default:'';not null;"`
+	// PeerHostname / PeerAlias 被控端的主机名与别名（写入时快照）。
+	PeerHostname string `json:"peer_hostname" gorm:"default:'';not null;"`
+	PeerAlias    string `json:"peer_alias" gorm:"default:'';not null;"`
+	// FromHostname / FromAlias 控制端的主机名与别名。
+	FromHostname string `json:"from_hostname" gorm:"default:'';not null;"`
+	FromAlias    string `json:"from_alias" gorm:"default:'';not null;"`
 	TimeModel
 }
 
