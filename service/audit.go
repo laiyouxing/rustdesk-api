@@ -70,6 +70,120 @@ func (as *AuditService) ConnInfoById(id uint) (res *model.AuditConn) {
 	return
 }
 
+// peerVersions 批量查设备版本：设备 id -> 版本号。
+func peerVersions(ids []string) map[string]string {
+	verMap := make(map[string]string, len(ids))
+	if len(ids) == 0 {
+		return verMap
+	}
+	type peerVersion struct {
+		Id      string
+		Version string
+	}
+	var rows []peerVersion
+	if err := DB.Model(&model.Peer{}).
+		Select("id, version").
+		Where("id in ?", ids).
+		Find(&rows).Error; err != nil {
+		global.Logger.Warn("peerVersions", err)
+		return verMap
+	}
+	for _, r := range rows {
+		verMap[r.Id] = r.Version
+	}
+	return verMap
+}
+
+// FillVersionsFromPeers 用 peers 表里登记的客户端版本，补全审计记录中缺失的版本。
+//
+// 1.7.31 之前的客户端不会在 /audit/conn 里上报 version/from_version，靠这条兜底
+// 也能让「连接日志」直接看到版本；新版客户端上报了就优先用上报值（更准确，
+// 反映连接发生时的版本，而不是查询时 peers 表里的现值）。
+func (as *AuditService) FillVersionsFromPeers(c *model.AuditConn) {
+	if c == nil {
+		return
+	}
+	needPeer := c.Version == "" && c.PeerId != ""
+	needFrom := c.FromVersion == "" && c.FromPeer != ""
+	if !needPeer && !needFrom {
+		return
+	}
+	ids := make([]string, 0, 2)
+	if needPeer {
+		ids = append(ids, c.PeerId)
+	}
+	if needFrom {
+		ids = append(ids, c.FromPeer)
+	}
+	verMap := peerVersions(ids)
+	if needPeer {
+		c.Version = verMap[c.PeerId]
+	}
+	if needFrom {
+		c.FromVersion = verMap[c.FromPeer]
+	}
+}
+
+// FillFileVersionsFromPeers 同 FillVersionsFromPeers，用于「文件传输日志」。
+func (as *AuditService) FillFileVersionsFromPeers(f *model.AuditFile) {
+	if f == nil {
+		return
+	}
+	needPeer := f.Version == "" && f.PeerId != ""
+	needFrom := f.FromVersion == "" && f.FromPeer != ""
+	if !needPeer && !needFrom {
+		return
+	}
+	ids := make([]string, 0, 2)
+	if needPeer {
+		ids = append(ids, f.PeerId)
+	}
+	if needFrom {
+		ids = append(ids, f.FromPeer)
+	}
+	verMap := peerVersions(ids)
+	if needPeer {
+		f.Version = verMap[f.PeerId]
+	}
+	if needFrom {
+		f.FromVersion = verMap[f.FromPeer]
+	}
+}
+
+// FillFileListVersions 批量给「文件传输日志」列表补版本，避免逐条查询。
+func (as *AuditService) FillFileListVersions(list []*model.AuditFile) {
+	if len(list) == 0 {
+		return
+	}
+	ids := make([]string, 0, len(list)*2)
+	for _, f := range list {
+		if f == nil {
+			continue
+		}
+		if f.Version == "" && f.PeerId != "" {
+			ids = append(ids, f.PeerId)
+		}
+		if f.FromVersion == "" && f.FromPeer != "" {
+			ids = append(ids, f.FromPeer)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	verMap := peerVersions(ids)
+	for _, f := range list {
+		if f == nil {
+			continue
+		}
+		if f.Version == "" && f.PeerId != "" {
+			f.Version = verMap[f.PeerId]
+		}
+		if f.FromVersion == "" && f.FromPeer != "" {
+			f.FromVersion = verMap[f.FromPeer]
+		}
+	}
+}
+
 // ActiveConnIdByPair 查 (peerId 作为被控端, fromPeer 作为控制端) 的进行中连接 id。
 // 没有进行中的会话返回 0。
 //
@@ -142,7 +256,7 @@ func (as *AuditService) StartStaleConnCloseSweep() {
 
 func (as *AuditService) closeStaleConns() {
 	now := time.Now()
-	offlineThreshold := now.Unix() - 300      // 对端离线超过 5 分钟
+	offlineThreshold := now.Unix() - 300        // 对端离线超过 5 分钟
 	maxAgeThreshold := now.Add(-24 * time.Hour) // 记录超过 24 小时
 	sub := DB.Model(&model.Peer{}).
 		Select("id").

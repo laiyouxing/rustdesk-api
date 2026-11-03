@@ -17,6 +17,10 @@ type AuditConn struct {
 	Type      int    `json:"type" gorm:"default:0;not null;"`
 	Uuid      string `json:"uuid" gorm:"default:'';not null;"`
 	CloseTime int64  `json:"close_time" gorm:"default:0;not null;"`
+	// Version 被控端（peer_id 那台设备）的客户端版本。
+	Version string `json:"version" gorm:"default:'';not null;"`
+	// FromVersion 控制端（from_peer 那台设备）的客户端版本。
+	FromVersion string `json:"from_version" gorm:"default:'';not null;"`
 	TimeModel
 }
 
@@ -37,6 +41,10 @@ type AuditFile struct {
 	Ip       string `json:"ip" gorm:"default:'';not null;"`
 	Num      int    `json:"num" gorm:"default:0;not null;"`
 	FromName string `json:"from_name" gorm:"default:'';not null;"`
+	// Version 被控端（peer_id 那台设备）的客户端版本。
+	Version string `json:"version" gorm:"default:'';not null;"`
+	// FromVersion 控制端（from_peer 那台设备）的客户端版本。
+	FromVersion string `json:"from_version" gorm:"default:'';not null;"`
 	TimeModel
 }
 

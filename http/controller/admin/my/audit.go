@@ -46,30 +46,36 @@ func (a *Audit) List(c *gin.Context) {
 			targetPeerIds = append(targetPeerIds, conn.PeerId)
 		}
 	}
-	hostMap := make(map[string]struct{ Hostname, Alias string })
+	type peerMeta struct{ Hostname, Alias, Version string }
+	hostMap := make(map[string]peerMeta)
 	if len(targetPeerIds) > 0 {
 		type Pa struct {
 			Id       string
 			Hostname string
 			Alias    string
+			Version  string
 		}
 		var pa []Pa
-		service.DB.Model(&model.Peer{}).Where("id in ?", targetPeerIds).Find(&pa)
+		service.DB.Model(&model.Peer{}).Select("id, hostname, alias, version").Where("id in ?", targetPeerIds).Find(&pa)
 		for _, p := range pa {
-			hostMap[p.Id] = struct{ Hostname, Alias string }{p.Hostname, p.Alias}
+			hostMap[p.Id] = peerMeta{p.Hostname, p.Alias, p.Version}
 		}
 	}
 	for _, conn := range res.AuditConns {
 		h := hostMap[conn.PeerId]
+		// 版本优先用连接发生时记录的值；老记录没存过，用 peers 表现值兜底。
+		if conn.Version == "" {
+			conn.Version = h.Version
+		}
 		closeTimeStr := ""
 		if conn.CloseTime > 0 {
 			closeTimeStr = time.Unix(conn.CloseTime, 0).Format("2006-01-02 15:04:05")
 		}
 		enriched = append(enriched, &ConnEntry{
-			AuditConn:     *conn,
-			PeerHostname:  h.Hostname,
-			PeerAlias:     h.Alias,
-			CloseTimeStr:  closeTimeStr,
+			AuditConn:    *conn,
+			PeerHostname: h.Hostname,
+			PeerAlias:    h.Alias,
+			CloseTimeStr: closeTimeStr,
 		})
 	}
 	if enriched == nil {

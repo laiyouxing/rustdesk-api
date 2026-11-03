@@ -16,6 +16,9 @@ type AuditConnForm struct {
 	SessionId float64  `json:"session_id"`
 	Type      int      `json:"type"`
 	Uuid      string   `json:"uuid"`
+	// Version 被控端版本；FromVersion 控制端版本。老客户端不传，服务端会用 peers 表兜底。
+	Version     string `json:"version"`
+	FromVersion string `json:"from_version"`
 }
 
 func (a *AuditConnForm) ToAuditConn() *model.AuditConn {
@@ -29,15 +32,17 @@ func (a *AuditConnForm) ToAuditConn() *model.AuditConn {
 	}
 	ssid := strconv.FormatFloat(a.SessionId, 'f', -1, 64)
 	return &model.AuditConn{
-		Action:    a.Action,
-		ConnId:    a.ConnId,
-		PeerId:    a.Id,
-		FromPeer:  fp,
-		FromName:  fn,
-		Ip:        a.Ip,
-		SessionId: ssid,
-		Type:      a.Type,
-		Uuid:      a.Uuid,
+		Action:      a.Action,
+		ConnId:      a.ConnId,
+		PeerId:      a.Id,
+		FromPeer:    fp,
+		FromName:    fn,
+		Ip:          a.Ip,
+		SessionId:   ssid,
+		Type:        a.Type,
+		Uuid:        a.Uuid,
+		Version:     a.Version,
+		FromVersion: a.FromVersion,
 	}
 }
 
@@ -49,6 +54,9 @@ type AuditFileForm struct {
 	PeerId string `json:"peer_id"`
 	Type   int    `json:"type"`
 	Uuid   string `json:"uuid"`
+	// Version 被控端版本；FromVersion 控制端版本，老客户端不传则由服务端用 peers 表兜底。
+	Version     string `json:"version"`
+	FromVersion string `json:"from_version"`
 }
 type AuditFileInfo struct {
 	Ip   string `json:"ip"`
@@ -74,5 +82,8 @@ func (a *AuditFileForm) ToAuditFile() *model.AuditFile {
 		FromName: fi.Name,
 		Ip:       fi.Ip,
 		Num:      fi.Num,
+		// 版本：新版客户端上报，老客户端为空，由 controller 用 peers 表兜底。
+		Version:     a.Version,
+		FromVersion: a.FromVersion,
 	}
 }

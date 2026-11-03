@@ -48,11 +48,11 @@ func (a *Audit) ConnList(c *gin.Context) {
 	// Enrich with peer hostname/alias
 	type ConnEntry struct {
 		model.AuditConn
-		PeerHostname  string `json:"peer_hostname"`
-		PeerAlias     string `json:"peer_alias"`
-		FromHostname  string `json:"from_hostname"`
-		FromAlias     string `json:"from_alias"`
-		CloseTimeStr  string `json:"close_time_str"`
+		PeerHostname string `json:"peer_hostname"`
+		PeerAlias    string `json:"peer_alias"`
+		FromHostname string `json:"from_hostname"`
+		FromAlias    string `json:"from_alias"`
+		CloseTimeStr string `json:"close_time_str"`
 	}
 	var enriched []*ConnEntry
 	var peerIds []string
@@ -64,22 +64,32 @@ func (a *Audit) ConnList(c *gin.Context) {
 			peerIds = append(peerIds, conn.FromPeer)
 		}
 	}
-	hostMap := make(map[string]struct{ Hostname, Alias string })
+	type peerMeta struct{ Hostname, Alias, Version string }
+	hostMap := make(map[string]peerMeta)
 	if len(peerIds) > 0 {
 		type Pa struct {
 			Id       string
 			Hostname string
 			Alias    string
+			Version  string
 		}
 		var pa []Pa
-		service.DB.Model(&model.Peer{}).Where("id in ?", peerIds).Find(&pa)
+		service.DB.Model(&model.Peer{}).Select("id, hostname, alias, version").Where("id in ?", peerIds).Find(&pa)
 		for _, p := range pa {
-			hostMap[p.Id] = struct{ Hostname, Alias string }{p.Hostname, p.Alias}
+			hostMap[p.Id] = peerMeta{p.Hostname, p.Alias, p.Version}
 		}
 	}
 	for _, conn := range res.AuditConns {
 		h := hostMap[conn.PeerId]
 		fh := hostMap[conn.FromPeer]
+		// 版本优先用连接发生时记录的值；老记录没存过，再用 peers 表的现值兜底，
+		// 这样升级前的历史数据也能显示版本。
+		if conn.Version == "" {
+			conn.Version = h.Version
+		}
+		if conn.FromVersion == "" {
+			conn.FromVersion = fh.Version
+		}
 		closeTimeStr := ""
 		if conn.CloseTime > 0 {
 			closeTimeStr = time.Unix(conn.CloseTime, 0).Format("2006-01-02 15:04:05")
@@ -195,6 +205,8 @@ func (a *Audit) FileList(c *gin.Context) {
 		}
 		admin.ApplyAuditOrder(tx, query)
 	})
+	// 版本：老记录没存过，用 peers 表现值兜底
+	service.AllService.AuditService.FillFileListVersions(res.AuditFiles)
 	response.Success(c, res)
 }
 
