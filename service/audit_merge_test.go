@@ -114,3 +114,84 @@ func TestMergeConnAttemptKeepsOtherUsers(t *testing.T) {
 		t.Fatalf("两家控制端的记录都应保留，实际 %d 条", n)
 	}
 }
+
+// 新版客户端带 op_id：同一个 op_id 说明是同一次点击引发的重试，
+// 即使距离上一次尝试很久（超出 120s 时间窗）也应并成一条。
+func TestMergeConnAttemptByOpId(t *testing.T) {
+	db := setupPeerAuditTestDB(t)
+	s := &AuditService{}
+
+	primary := &model.AuditConn{Action: model.AuditActionNew, PeerId: "peer-1", FromPeer: "peer-2",
+		FromName: "张三", ConnId: 1, Ip: "1.2.3.4", OpId: 77001,
+		CloseTime: time.Now().Add(-time.Hour).Unix()}
+	if err := db.Create(primary).Error; err != nil {
+		t.Fatalf("create primary: %v", err)
+	}
+	curRow := &model.AuditConn{Action: model.AuditActionNew, PeerId: "peer-1", ConnId: 2, Ip: "1.2.3.4"}
+	db.Create(curRow)
+
+	merged := s.MergeConnAttempt(&model.AuditConn{PeerId: "peer-1", FromPeer: "peer-2", FromName: "张三",
+		ConnId: 2, SessionId: "555", Ip: "1.2.3.4", OpId: 77001})
+	if merged == 0 {
+		t.Fatalf("同一 op_id 应合并，实际返回 0")
+	}
+
+	var rows []model.AuditConn
+	db.Where("peer_id = ? and from_peer = ?", "peer-1", "peer-2").Find(&rows)
+	if len(rows) != 1 {
+		t.Fatalf("同一 op_id 合并后应只剩 1 条，实际 %d 条", len(rows))
+	}
+	got := rows[0]
+	if got.ConnId != 2 || got.AttemptCount != 2 || got.CloseTime != 0 {
+		t.Errorf("合并结果不对：conn_id=%d attempt_count=%d close_time=%d",
+			got.ConnId, got.AttemptCount, got.CloseTime)
+	}
+	if got.OpId != 77001 {
+		t.Errorf("op_id 应保留 77001，实际 %d", got.OpId)
+	}
+}
+
+// 同一个用户短时间内点了两次连接（两个不同的 op_id）：不能被时间窗误并成一条。
+func TestMergeConnAttemptSeparatesDifferentOps(t *testing.T) {
+	db := setupPeerAuditTestDB(t)
+	s := &AuditService{}
+
+	// 第一次点击，已经结束
+	db.Create(&model.AuditConn{Action: model.AuditActionNew, PeerId: "peer-1", FromPeer: "peer-2",
+		ConnId: 1, Ip: "1.2.3.4", OpId: 10001, CloseTime: time.Now().Unix()})
+	// 第二次点击：被控端先落了 new 行
+	db.Create(&model.AuditConn{Action: model.AuditActionNew, PeerId: "peer-1", ConnId: 2, Ip: "1.2.3.4"})
+
+	// 距离上一条只有几秒，但 op_id 不同 → 是两次独立操作
+	if got := s.MergeConnAttempt(&model.AuditConn{PeerId: "peer-1", FromPeer: "peer-2", ConnId: 2,
+		Ip: "1.2.3.4", OpId: 20002}); got != 0 {
+		t.Fatalf("不同 op_id 不应合并，实际合并到 %d", got)
+	}
+}
+
+// 首次带 op_id 的尝试没有可合并的主记录，走 upsert 把 op_id 落到 new 建的那行上，
+// 后续同一操作的其它重试才能继续按 op_id 合并。
+func TestUpsertByPeerIdAndConnIdFillsOpId(t *testing.T) {
+	db := setupPeerAuditTestDB(t)
+	s := &AuditService{}
+
+	// new 事件建的行：还没有 from_peer / op_id
+	db.Create(&model.AuditConn{Action: model.AuditActionNew, PeerId: "peer-1", ConnId: 7, Ip: "1.2.3.4"})
+
+	if err := s.UpsertByPeerIdAndConnId(&model.AuditConn{Action: model.AuditActionNew, PeerId: "peer-1",
+		FromPeer: "peer-2", FromName: "张三", ConnId: 7, Ip: "1.2.3.4", OpId: 40004}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+
+	var rows []model.AuditConn
+	db.Where("peer_id = ?", "peer-1").Find(&rows)
+	if len(rows) != 1 {
+		t.Fatalf("upsert 后应仍为 1 条，实际 %d 条", len(rows))
+	}
+	if rows[0].OpId != 40004 {
+		t.Errorf("op_id 应补成 40004，实际 %d", rows[0].OpId)
+	}
+	if rows[0].FromPeer != "peer-2" || rows[0].FromName != "张三" {
+		t.Errorf("from_peer/from_name 未补全：%q/%q", rows[0].FromPeer, rows[0].FromName)
+	}
+}

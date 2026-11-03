@@ -76,6 +76,7 @@ func (a *Audit) AuditConn(c *gin.Context) {
 			PeerAlias:    ac.PeerAlias,
 			FromHostname: ac.FromHostname,
 			FromAlias:    ac.FromAlias,
+			OpId:         ac.OpId,
 		}
 		// 先关掉同 (from_peer, peer_id) 更早的「进行中」记录，再写本次记录。
 		// 顺序很重要：反过来的话会把刚建立的这条一起关掉（见函数注释）。

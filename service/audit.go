@@ -105,8 +105,16 @@ func (as *AuditService) MergeConnAttempt(cur *model.AuditConn) uint {
 	}
 
 	q := DB.Model(&model.AuditConn{}).
-		Where("peer_id = ? and from_peer = ?", cur.PeerId, cur.FromPeer).
-		Where("(close_time = 0 OR close_time >= ?)", now.Add(-ConnMergeWindow).Unix())
+		Where("peer_id = ? and from_peer = ?", cur.PeerId, cur.FromPeer)
+	if cur.OpId != 0 {
+		// 新客户端：op_id 是「一次用户操作」的显式标识，跨重试稳定，
+		// 只按它精确合并——不再看时间窗。否则用户断开后很快又点一次连接，
+		// 时间窗会把两次不同的操作误并成一条。
+		q = q.Where("op_id = ?", cur.OpId)
+	} else {
+		// 老客户端没有 op_id：退回「同 from_peer + 时间窗」的推断。
+		q = q.Where("(close_time = 0 OR close_time >= ?)", now.Add(-ConnMergeWindow).Unix())
+	}
 	if hasCur {
 		q = q.Where("id <> ?", curRow.Id)
 	}
@@ -119,6 +127,10 @@ func (as *AuditService) MergeConnAttempt(cur *model.AuditConn) uint {
 		"conn_id":       cur.ConnId,
 		"close_time":    0, // 同一次操作的重试，记录回到「进行中」
 		"attempt_count": gorm.Expr("attempt_count + 1"),
+	}
+	if cur.OpId != 0 {
+		// 主记录若由老逻辑建出（op_id = 0），第一次带 op_id 的尝试会把它补上。
+		updates["op_id"] = cur.OpId
 	}
 	if cur.SessionId != "" && cur.SessionId != "0" {
 		updates["session_id"] = cur.SessionId

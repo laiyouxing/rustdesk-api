@@ -19,6 +19,9 @@ type AuditConnForm struct {
 	// Version 被控端版本；FromVersion 控制端版本。老客户端不传，服务端会用 peers 表兜底。
 	Version     string `json:"version"`
 	FromVersion string `json:"from_version"`
+	// OpId 控制端「一次操作」的标识（1.7.32+），同一次点击的所有重试都相同；
+	// 老客户端不传（0），服务端回退到时间窗推断。
+	OpId uint64 `json:"op_id"`
 }
 
 func (a *AuditConnForm) ToAuditConn() *model.AuditConn {
@@ -43,6 +46,7 @@ func (a *AuditConnForm) ToAuditConn() *model.AuditConn {
 		Uuid:        a.Uuid,
 		Version:     a.Version,
 		FromVersion: a.FromVersion,
+		OpId:        a.OpId,
 	}
 }
 
