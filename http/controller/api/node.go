@@ -77,6 +77,15 @@ func (n *Node) Relays(c *gin.Context) {
 		"my_region": myRegion,
 		"region":    region,
 		"weights":   service.AllService.NodeService.Weights(),
+		// ordered=true：列表已按调度分数排好序，hbbs 应**按顺序**选路
+		// （早先 hbbs 忽略顺序做轮转，导致人工权重/调度权重看不出效果）。
+		// 静态兜底项仍带 static=true，它们只是"没接入 agent 的备用中继"，
+		// 排序时排在调度节点之后。
+		"ordered": true,
+		// disabled：被管理员手动下线的中继地址。hbbs 在本次调度结果为空、
+		// 需要保留旧列表时，用它把这些地址剔除——否则"下线"只对下一次
+		// 成功拉取生效，而空列表分支永远不会成功拉取。
+		"disabled": service.AllService.NodeService.DisabledRelayAddrs(),
 	})
 }
 

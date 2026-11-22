@@ -3,6 +3,7 @@ package admin
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -182,6 +183,15 @@ func (n *Node) Update(c *gin.Context) {
 	if req.Weight != nil {
 		if *req.Weight < 0 {
 			response.Fail(c, 101, "人工权重不能为负数")
+			return
+		}
+		// 评分时按 1 - normalize(weight, MaxNodeManualWeight) 折算，超过上限
+		// 的值全部等价（100 与 10000 没有区别），在这里明确拒绝，避免管理员
+		// 以为"填得越大越优先"而填了一个不生效的数。
+		if *req.Weight > service.MaxNodeManualWeight {
+			response.Fail(c, 101,
+				fmt.Sprintf("人工权重不能超过 %d（超过后与 %d 等价，不再有区分度）",
+					service.MaxNodeManualWeight, service.MaxNodeManualWeight))
 			return
 		}
 		if *req.Weight != node.Weight {

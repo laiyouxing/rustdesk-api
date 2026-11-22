@@ -73,16 +73,28 @@ type NodeScoreWeights struct {
 
 // DefaultNodeScoreWeights 默认权重：
 // 以负载为主（会话+带宽占 55%），资源占用 25%，延迟 20%，人工权重作为微调。
+//
+// 人工权重（Weight 系数）**不能是 0**：系数为 0 时 `w.Weight*sWeightCost`
+// 恒为 0，管理员在节点里改「人工权重」不会有任何效果，看起来就是"调了没用"。
+// 这里给一个 0.10 的默认值，同时把其余各项按比例略降，保持总量仍为 1。
 func DefaultNodeScoreWeights() NodeScoreWeights {
 	return NodeScoreWeights{
-		Sessions:  0.35,
-		Bandwidth: 0.20,
-		CPU:       0.15,
+		Sessions:  0.30,
+		Bandwidth: 0.18,
+		CPU:       0.14,
 		Mem:       0.10,
-		RTT:       0.20,
-		Weight:    0.0,
+		RTT:       0.18,
+		Weight:    0.10,
 	}
 }
+
+// MaxNodeManualWeight 人工权重（节点字段 weight）的语义上限。
+//
+// 评分时按 `1 - normalize(weight, MaxNodeManualWeight)` 折算成成本，
+// normalize 会把比值截断到 [0,1]，所以超过该值的输入全部等价（100 与 10000
+// 完全相同），只有 0~MaxNodeManualWeight 区间有区分度。管理端校验与前端
+// 上限都用这个常量，避免"前端允许 10000、后端按 100 归一化"的错配。
+const MaxNodeManualWeight = 100
 
 // NodeService 集群节点注册、心跳、健康检查与调度评分。
 type NodeService struct {
@@ -551,7 +563,7 @@ func (s *NodeService) Score(n *model.ServerNode, w NodeScoreWeights) float64 {
 	// 权重 100 → 成本 0；权重 0 → 成本 1。
 	// 这样所有项都是"成本"，方向一致（总和越小越优先），
 	// 不会再出现"负载项看小、人工项看大"的混乱。
-	sWeightCost := 1 - normalize(float64(n.Weight), 100)
+	sWeightCost := 1 - normalize(float64(n.Weight), MaxNodeManualWeight)
 
 	score := w.Sessions*sSess +
 		w.Bandwidth*sBw +
@@ -576,8 +588,13 @@ func (s *NodeService) Relays(region string, limit int) []map[string]interface{} 
 		score float64
 	}
 	list := make([]scored, 0, len(nodes))
+	// disabledAddrs：被管理员手动下线的 hbbr 地址，静态兜底必须跳过它们。
+	disabledAddrs := make(map[string]bool, 4)
 	for _, n := range nodes {
 		if n.Disabled == 1 {
+			if n.Addr != "" {
+				disabledAddrs[n.Addr] = true
+			}
 			continue
 		}
 		if n.LastSeen == 0 || now-n.LastSeen > offline {
@@ -628,8 +645,13 @@ func (s *NodeService) Relays(region string, limit int) []map[string]interface{} 
 	}
 	// 追加静态中继兜底：保证未接入 agent 的中继不会被调度结果挤掉。
 	// 调度只覆盖"已注册且在线"的节点，过渡期内中继数量可能少于静态配置。
+	//
+	// 但兜底**不能**把管理员手动下线的节点又加回来：静态列表是按地址配置的，
+	// 与节点记录无关，早先这里只按地址去重，导致"后台点了下线、调度列表里
+	// 依然有它"，下线看起来完全没生效。现在先收集 disabled 的 hbbr 地址，
+	// 兜底时跳过——下线优先级高于静态兜底。
 	for _, addr := range s.StaticRelays() {
-		if seen[addr] {
+		if seen[addr] || disabledAddrs[addr] {
 			continue
 		}
 		seen[addr] = true
@@ -642,6 +664,25 @@ func (s *NodeService) Relays(region string, limit int) []map[string]interface{} 
 	}
 	if limit > 0 && len(out) > limit {
 		out = out[:limit]
+	}
+	return out
+}
+
+// DisabledRelayAddrs 返回被管理员手动下线的 hbbr 地址列表。
+//
+// 用途：hbbs 拿到的调度列表只是"应该用哪些"，它自己还可能留着上一次的列表
+// （例如本次调度结果为空时按设计保留旧配置）。把下线的地址单独告知，
+// hbbs 就能把它们从**保留的旧列表**里剔除，而不是继续沿用。
+func (s *NodeService) DisabledRelayAddrs() []string {
+	var nodes []model.ServerNode
+	if err := DB.Where("kind = ? AND disabled = 1", "hbbr").Find(&nodes).Error; err != nil {
+		return nil
+	}
+	out := make([]string, 0, len(nodes))
+	for _, n := range nodes {
+		if addr := strings.TrimSpace(n.Addr); addr != "" {
+			out = append(out, addr)
+		}
 	}
 	return out
 }
